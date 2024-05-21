@@ -1,0 +1,22 @@
+[package]
+name = "wasm-array"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+arraylib = { path = "../arraylib" }
+serde = { version = "^1.0", features = ["derive"] }
+wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
+
+[dependencies.web-sys]
+version = "^0.3.69"
+features = [
+  'Document',
+  'Element',
+  'HtmlElement',
+  'Node',
+  'Window',
+]
