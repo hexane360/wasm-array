@@ -290,3 +290,9 @@ macro_rules! impl_unary_op {
 }
 
 impl_unary_op!(ops::Neg, neg);
+
+// implement elementwise equality operations
+
+impl<T: PhysicalType + PartialEq> TypedArray<T> {
+    fn eq(self, other: TypedArray<T>)
+}

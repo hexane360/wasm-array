@@ -6,6 +6,6 @@ fn main() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn test() -> &'static str {
-    return "Hello world!"
+pub fn test() -> String {
+    "Hello world!".to_owned()
 }

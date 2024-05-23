@@ -3,6 +3,13 @@ resolver = "2"
 
 members = [
     "arraylib",
+    "arraylib_macro",
     "wasm-array",
 ]
 
+[workspace.dependencies]
+bytemuck = { version = "1.16.0", features = ["extern_crate_std", "derive", "min_const_generics", "zeroable_maybe_uninit"] }
+ndarray = "0.15.6"
+num = "0.4.3"
+num-complex = { version = "0.4.6", features = ["bytemuck"] }
+zerocopy = { version = "0.7.34", features = ["byteorder", "alloc", "derive"] }

@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytemuck = { version = "1.16.0", features = ["extern_crate_std", "derive", "min_const_generics"] }
-num = "0.4.3"
-serde = { version = "^1.0", features = ["derive"] }
-zerocopy = { version = "0.7.34", features = ["byteorder", "alloc", "derive"] }
+arraylib_macro = { path = "../arraylib_macro" }
+bytemuck.workspace = true
+ndarray.workspace = true
+num.workspace = true
+num-complex.workspace = true
+zerocopy.workspace = true

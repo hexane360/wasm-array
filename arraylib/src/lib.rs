@@ -1,8 +1,10 @@
 #![feature(new_uninit)]
+#![feature(trace_macros)]
 
-pub mod typedarray;
-pub mod array;
+pub mod bool;
 pub mod dtype;
+//pub mod typedarray;
+pub mod array;
 
 
 pub fn add(left: usize, right: usize) -> usize {

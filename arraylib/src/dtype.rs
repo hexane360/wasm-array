@@ -1,8 +1,10 @@
+use num::complex::Complex;
 use std::fmt::{Display, Formatter};
 use std::mem::{size_of, MaybeUninit};
-use std::num::NonZeroU8;
 
-use zerocopy::FromBytes;
+use bytemuck::AnyBitPattern;
+
+pub use crate::bool::Bool;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DataType {
@@ -17,19 +19,21 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
+    Complex64,
+    Complex128,
 }
 
-pub trait PhysicalType: FromBytes {
+pub trait PhysicalType: AnyBitPattern {
     const DATATYPE: DataType;
     type BytesType;
 }
 
-impl<T: PhysicalType> PhysicalType for MaybeUninit<T> {
+impl<T: PhysicalType + AnyBitPattern> PhysicalType for MaybeUninit<T> {
     const DATATYPE: DataType = T::DATATYPE;
     type BytesType = T::BytesType;
 }
 
-impl PhysicalType for Option<NonZeroU8> { const DATATYPE: DataType = DataType::Boolean; type BytesType = [u8; size_of::<Self>()]; }
+impl PhysicalType for Bool { const DATATYPE: DataType = DataType::Boolean; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for u8 { const DATATYPE: DataType = DataType::UInt8; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for u16 { const DATATYPE: DataType = DataType::UInt16; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for u32 { const DATATYPE: DataType = DataType::UInt32; type BytesType = [u8; size_of::<Self>()]; }
@@ -40,6 +44,8 @@ impl PhysicalType for i32 { const DATATYPE: DataType = DataType::Int32; type Byt
 impl PhysicalType for i64 { const DATATYPE: DataType = DataType::Int64; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for f32 { const DATATYPE: DataType = DataType::Float32; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for f64 { const DATATYPE: DataType = DataType::Float64; type BytesType = [u8; size_of::<Self>()]; }
+impl PhysicalType for Complex<f32> { const DATATYPE: DataType = DataType::Complex64; type BytesType = [u8; size_of::<Self>()]; }
+impl PhysicalType for Complex<f64> { const DATATYPE: DataType = DataType::Complex128; type BytesType = [u8; size_of::<Self>()]; }
 
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -55,6 +61,8 @@ impl Display for DataType {
             DataType::Int64 => "i64",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
+            DataType::Complex64 => "c64",
+            DataType::Complex128 => "c128",
         })
     }
 }
