@@ -13,3 +13,5 @@ ndarray = "0.15.6"
 num = "0.4.3"
 num-complex = { version = "0.4.6", features = ["bytemuck"] }
 zerocopy = { version = "0.7.34", features = ["byteorder", "alloc", "derive"] }
+
+rstest = "0.19.0"

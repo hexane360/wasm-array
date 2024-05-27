@@ -4,10 +4,11 @@ use std::borrow::Borrow;
 
 use bytemuck::Pod;
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, ArrayD, Zip, Dimension};
+use ndarray::{Array, ArrayD, Dimension, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, PhysicalType, Bool};
+use crate::cast::Cast;
 
 #[derive(Debug)]
 pub struct DynArray {
@@ -185,7 +186,46 @@ impl PartialEq for DynArray {
 }
 impl Eq for DynArray {}
 
+
+macro_rules! cast_to_impl {
+    ($arr:expr, $dtype:expr, $( ($ty:path, $fn:ident) ),* ) => {
+        match $dtype  {
+            $(
+                <$ty as PhysicalType>::DATATYPE => { let f = T::$fn()?; Some($arr.mapv_into_any(f).into()) }
+            ),*,
+        }
+    };
+}
+
+#[inline]
+fn cast_to<T: Cast + PhysicalType>(arr: ArrayD<T>, dtype: DataType) -> Option<DynArray> {
+    cast_to_impl!(arr, dtype,
+        (Bool, cast_bool),
+        (u8, cast_uint8), (u16, cast_uint16), (u32, cast_uint32), (u64, cast_uint64),
+        (i8, cast_int8), (i16, cast_int16), (i32, cast_int32), (i64, cast_int64),
+        (f32, cast_float32), (f64, cast_float64),
+        (Complex<f32>, cast_complex64), (Complex<f64>, cast_complex128)
+    )
+}
+
 impl DynArray {
+    pub fn cast(self, dtype: DataType) -> DynArray {
+        let init_dtype = self.dtype();
+
+        if init_dtype == dtype {
+            return self;
+        }
+
+        let s = self;
+        match type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |s| cast_to(s, dtype)
+        ) {
+            Some(arr) => arr,
+            None => panic!("Unable to cast dtype {} to {}", init_dtype, dtype),
+        }
+    }
+
     pub fn abs(self) -> DynArray {
         let s = self;
 

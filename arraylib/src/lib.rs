@@ -1,8 +1,10 @@
 #![feature(new_uninit)]
-#![feature(trace_macros)]
+#![feature(type_alias_impl_trait)]
+#![feature(convert_float_to_int)]
 
 pub mod bool;
 pub mod dtype;
+mod cast;
 //pub mod typedarray;
 pub mod array;
 
