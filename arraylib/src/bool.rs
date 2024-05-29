@@ -5,6 +5,7 @@ use std::fmt;
 use std::ops;
 
 use bytemuck::{Pod, Zeroable};
+use num;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -84,6 +85,16 @@ impl ops::Mul<Bool> for Bool {
     fn mul(self, rhs: Bool) -> Self::Output { self & rhs }
 }
 
+impl ops::Div<Bool> for Bool {
+    type Output = Self;
+    fn div(self, rhs: Bool) -> Self::Output { Self(self.0 / rhs.0) }
+}
+
+impl ops::Rem<Bool> for Bool {
+    type Output = Self;
+    fn rem(self, rhs: Bool) -> Self::Output { Self(self.0 % rhs.0) }
+}
+
 impl ops::BitAndAssign<Bool> for Bool {
     fn bitand_assign(&mut self, rhs: Bool) { self.0 &= rhs.0; }
 }
@@ -107,3 +118,25 @@ impl ops::SubAssign<Bool> for Bool {
 impl ops::MulAssign<Bool> for Bool {
     fn mul_assign(&mut self, rhs: Bool) { *self &= rhs; }
 }
+
+impl num::Zero for Bool {
+    fn zero() -> Self { Bool(0u8) }
+
+    fn is_zero(&self) -> bool { !self.canonicalize() }
+}
+
+impl num::One for Bool {
+    fn one() -> Self { Bool(1u8) }
+
+    fn is_one(&self) -> bool { self.canonicalize() }
+}
+
+impl num::Num for Bool {
+    type FromStrRadixErr = <u8 as num::Num>::FromStrRadixErr;
+
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        u8::from_str_radix(str, radix).map(Bool::from)
+    }
+}
+
+impl num::Unsigned for Bool { }

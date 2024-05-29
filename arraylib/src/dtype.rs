@@ -320,8 +320,8 @@ impl Display for DataType {
 /// information.
 /// This roughly follows numpy's promotion convention, with a few differences.
 /// Type promotions are commutative, but not necessarily associative. For instance,
-/// `promote_type(&[Float32, promote_type(Int16, UInt16)]) == Float64`,
-/// while `promote_type(&[Int16, promote_type(Float32, UInt16)]) == Float32`.
+/// `promote_type(&[Float32, promote_type(&[Int16, UInt16])]) == Float64`,
+/// while `promote_type(&[Int16, promote_type(&[Float32, UInt16])]) == Float32`.
 pub fn promote_types<'a, T, I>(dtypes: I) -> DataType
 where T: IntoDataType + 'a, I: IntoIterator<Item = &'a T> + Copy {
     // we first find the output category as the maximum

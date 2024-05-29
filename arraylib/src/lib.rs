@@ -6,6 +6,7 @@ pub mod bool;
 pub mod dtype;
 mod cast;
 //pub mod typedarray;
+pub mod error;
 pub mod array;
 
 

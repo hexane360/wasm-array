@@ -5,11 +5,12 @@ use std::fmt::Debug;
 
 use bytemuck::Pod;
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, ArrayD, Dimension, Zip};
+use ndarray::{Array, ArrayD, Dimension, ShapeBuilder, Zip, IxDyn};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, PhysicalType, Bool, promote_types};
 use crate::cast::Cast;
+use crate::error::ArrayError;
 
 #[derive(Debug)]
 pub struct DynArray {
@@ -53,9 +54,48 @@ impl DynArray {
         Some(self.inner.downcast_mut().unwrap())
     }
 
+    pub fn zeros<Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, dtype: DataType) -> Self {
+        match dtype {
+            DataType::Boolean => ArrayD::<Bool>::zeros(shape).into(),
+            DataType::UInt8 => ArrayD::<u8>::zeros(shape).into(),
+            DataType::UInt16 => ArrayD::<u16>::zeros(shape).into(),
+            DataType::UInt32 => ArrayD::<u32>::zeros(shape).into(),
+            DataType::UInt64 => ArrayD::<u64>::zeros(shape).into(),
+            DataType::Int8 => ArrayD::<i8>::zeros(shape).into(),
+            DataType::Int16 => ArrayD::<i16>::zeros(shape).into(),
+            DataType::Int32 => ArrayD::<i32>::zeros(shape).into(),
+            DataType::Int64 => ArrayD::<i64>::zeros(shape).into(),
+            DataType::Float32 => ArrayD::<f32>::zeros(shape).into(),
+            DataType::Float64 => ArrayD::<f64>::zeros(shape).into(),
+            DataType::Complex64 => ArrayD::<Complex<f32>>::zeros(shape).into(),
+            DataType::Complex128 => ArrayD::<Complex<f64>>::zeros(shape).into(),
+        }
+    }
+
+    pub fn ones<Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, dtype: DataType) -> Self {
+        match dtype {
+            DataType::Boolean => ArrayD::<Bool>::ones(shape).into(),
+            DataType::UInt8 => ArrayD::<u8>::ones(shape).into(),
+            DataType::UInt16 => ArrayD::<u16>::ones(shape).into(),
+            DataType::UInt32 => ArrayD::<u32>::ones(shape).into(),
+            DataType::UInt64 => ArrayD::<u64>::ones(shape).into(),
+            DataType::Int8 => ArrayD::<i8>::ones(shape).into(),
+            DataType::Int16 => ArrayD::<i16>::ones(shape).into(),
+            DataType::Int32 => ArrayD::<i32>::ones(shape).into(),
+            DataType::Int64 => ArrayD::<i64>::ones(shape).into(),
+            DataType::Float32 => ArrayD::<f32>::ones(shape).into(),
+            DataType::Float64 => ArrayD::<f64>::ones(shape).into(),
+            DataType::Complex64 => ArrayD::<Complex<f32>>::ones(shape).into(),
+            DataType::Complex128 => ArrayD::<Complex<f64>>::ones(shape).into(),
+        }
+    }
+
+    pub fn full<T: PhysicalType + Pod, Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, value: T) -> Self {
+        ArrayD::<T>::from_elem(shape, value).into()
+    }
 }
 
-impl<T: PhysicalType + Pod + 'static, D: Dimension> From<Array<T, D>> for DynArray {
+impl<T: PhysicalType + Pod, D: Dimension> From<Array<T, D>> for DynArray {
     fn from(value: Array<T, D>) -> Self { Self::from_typed(value.into_dyn()) }
 }
 
@@ -221,7 +261,7 @@ impl DynArray {
             |ref s| cast_to(s, dtype)
         ) {
             Some(arr) => Cow::Owned(arr),
-            None => panic!("Unable to cast dtype {} to {}", init_dtype, dtype),
+            None => std::panic::panic_any(ArrayError::type_err(format!("Unable to cast dtype {} to {}", init_dtype, dtype))),
         }
     }
 
