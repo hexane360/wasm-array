@@ -11,12 +11,14 @@ use syn::token::Comma;
 use quote::{quote, quote_spanned};
 
 struct TypeDispatches {
+    dtype: Option<Ident>,
     inner: Punctuated<TypeDispatch, Comma>,
 }
 
 impl Parse for TypeDispatches {
     fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self { inner: Punctuated::parse_terminated(input)? })
+        let dtype = Ident::parse(input).ok();
+        Ok(Self { dtype, inner: Punctuated::parse_terminated(input)? })
     }
 }
 
@@ -33,9 +35,9 @@ impl Parse for TypeDispatch {
         let _comma1 = input.parse()?;
         let closure: ExprClosure = input.parse()?;
 
-        if closure.inputs.len() == 0 {
+        /*if closure.inputs.len() == 0 {
             return Err(Error::new(closure.inputs.span(), "expected one or more bindings"));
-        }
+        }*/
 
         let mut idents = Vec::with_capacity(closure.inputs.len());
 
@@ -57,7 +59,7 @@ impl Parse for TypeDispatch {
 pub fn type_dispatch(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(tokens as TypeDispatches);
 
-    let first_ident: Ident = input.inner.first().unwrap().idents.first().unwrap().ident.to_owned();
+    let first_ident: Option<Ident> = input.inner.first().and_then(|i| i.idents.first()).map(|i| i.ident.to_owned());
 
     let mut arms: Vec<_> = input.inner.into_iter().flat_map(|input| {
         input.types.elems.into_iter().map(move |ty: Type| {
@@ -83,14 +85,23 @@ pub fn type_dispatch(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
         })
     }).collect();
 
-    arms.push(quote!(_ => panic!("Unsupported operation for type '{}'", #first_ident.dtype())));
-
-    let out = quote! {
-        match #first_ident.dtype() {
-            #( #arms ),*,
+    let dtype_expr = match input.dtype {
+        Some(input_dtype) => quote! { #input_dtype },
+        None => {
+            let first_ident = first_ident.expect("Expected a dtype or at least one binding");
+            quote! { #first_ident.dtype() }
         }
     };
-    out.into()
+
+    arms.push(quote! {
+        _ => std::panic::panic_any(crate::error::ArrayError::type_err(format!("Unsupported operation for type '{}'", #dtype_expr)))
+    });
+
+    quote! {
+        match #dtype_expr {
+            #( #arms ),*,
+        }
+    }.into()
 }
 
 #[proc_macro_attribute]
@@ -147,3 +158,27 @@ pub fn forward_val_to_ref(_attr: proc_macro::TokenStream, item: proc_macro::Toke
         #new_impl
     }.into()
 }
+
+#[proc_macro_attribute]
+pub fn impl_for_types(_attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item = parse_macro_input!(item as ItemImpl);
+
+    let types: Vec<Type> = match item.self_ty.as_ref() {
+        Type::Paren(ty) => vec![*ty.elem.clone()],
+        Type::Tuple(tup) => tup.elems.iter().cloned().collect(),
+        ty => {
+            return quote_spanned! {
+                ty.span() => compile_error!("Trait must be implemented for a tuple of types");
+            }.into();
+        }
+    };
+
+    let new_impls: Vec<ItemImpl> = types.into_iter().map(|ty| {
+        let mut item = item.clone();
+        item.self_ty = ty.into();
+        item
+    }).collect();
+
+    quote! { #( #new_impls )* }.into()
+}
+

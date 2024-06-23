@@ -1,11 +1,11 @@
 use std::any::Any;
 use std::ops;
 use std::borrow::{Borrow, Cow};
-use std::fmt::Debug;
+use std::fmt;
 
 use bytemuck::Pod;
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, ArrayD, Dimension, ShapeBuilder, Zip, IxDyn};
+use ndarray::{Array, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, PhysicalType, Bool, promote_types};
@@ -15,6 +15,7 @@ use crate::error::ArrayError;
 #[derive(Debug)]
 pub struct DynArray {
     dtype: DataType,
+    shape: Vec<usize>,
     inner: Box<dyn Any>,
 }
 
@@ -32,24 +33,27 @@ impl Clone for DynArray {
 impl DynArray {
     pub fn dtype(&self) -> DataType { self.dtype }
 
-    pub fn from_typed<T: PhysicalType + Pod + 'static>(arr: ArrayD<T>) -> Self {
+    pub fn shape(&self) -> Vec<usize> { self.shape.clone() }
+
+    pub fn from_typed<T: PhysicalType + Pod>(arr: ArrayD<T>) -> Self {
         Self {
             dtype: T::DATATYPE,
+            shape: arr.shape().into(),
             inner: Box::new(arr) as Box<dyn Any>,
         }
     }
 
-    pub fn downcast<T: PhysicalType + Pod + 'static>(self) -> Option<ArrayD<T>> {
+    pub fn downcast<T: PhysicalType + Pod>(self) -> Option<ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
         Some(*self.inner.downcast().unwrap())
     }
 
-    pub fn downcast_ref<T: PhysicalType + Pod + 'static>(&self) -> Option<&ArrayD<T>> {
+    pub fn downcast_ref<T: PhysicalType + Pod>(&self) -> Option<&ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
         Some(self.inner.downcast_ref().unwrap())
     }
 
-    pub fn downcast_mut<T: PhysicalType + Pod + 'static>(&mut self) -> Option<&mut ArrayD<T>> {
+    pub fn downcast_mut<T: PhysicalType + Pod>(&mut self) -> Option<&mut ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
         Some(self.inner.downcast_mut().unwrap())
     }
@@ -93,6 +97,45 @@ impl DynArray {
     pub fn full<T: PhysicalType + Pod, Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, value: T) -> Self {
         ArrayD::<T>::from_elem(shape, value).into()
     }
+
+    pub fn broadcast_with(&self, other: &DynArray) -> Result<(DynArray, DynArray), ShapeError> {
+        let (lhs, rhs) = (self, other);
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| {
+                let broadcast_shape: IxDyn = co_broadcast(&lhs.raw_dim().into_dyn(), &rhs.raw_dim().into_dyn())?;
+                Ok((lhs.broadcast(broadcast_shape.clone()).unwrap().mapv(|v| v).into(), rhs.broadcast(broadcast_shape).unwrap().mapv(|v| v).into()))
+            }
+        )
+    }
+}
+
+pub(crate) fn co_broadcast<D1, D2, Output>(shape1: &D1, shape2: &D2) -> Result<Output, ShapeError>
+where
+    D1: Dimension,
+    D2: Dimension,
+    Output: Dimension,
+{
+    let (k, overflow) = shape1.ndim().overflowing_sub(shape2.ndim());
+    // Swap the order if d2 is longer.
+    if overflow {
+        return co_broadcast::<D2, D1, Output>(shape2, shape1);
+    }
+    // The output should be the same length as shape1.
+    let mut out = Output::zeros(shape1.ndim());
+    for (out, s) in out.slice_mut().into_iter().zip(shape1.slice()) {
+        *out = *s;
+    }
+    for (out, s2) in (&mut out.slice_mut()[k..]).into_iter().zip(shape2.slice()) {
+        if *out != *s2 {
+            if *out == 1 {
+                *out = *s2
+            } else if *s2 != 1 {
+                return Err(ShapeError::from_kind(ErrorKind::IncompatibleShape));
+            }
+        }
+    }
+    Ok(out)
 }
 
 impl<T: PhysicalType + Pod, D: Dimension> From<Array<T, D>> for DynArray {
@@ -107,7 +150,7 @@ impl<'a, T: Borrow<DynArray>> ops::Add<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             // use wrapping arithmetic for integral types
             (u8, u16, u32, u64, i8, i16, i32, i64),
@@ -126,7 +169,7 @@ impl<'a, T: Borrow<DynArray>> ops::Sub<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             // use wrapping arithmetic for integral types
             (u8, u16, u32, u64, i8, i16, i32, i64),
@@ -145,7 +188,7 @@ impl<'a, T: Borrow<DynArray>> ops::Mul<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1.wrapping_mul(e2)).into() },
@@ -163,7 +206,7 @@ impl<'a, T: Borrow<DynArray>> ops::Div<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64),
             // saturating div, ensuring i32::MIN / -1i32 == i32::MAX
@@ -182,10 +225,25 @@ impl<'a, T: Borrow<DynArray>> ops::BitAnd<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 & e2).into() },
+        )
+    }
+}
+
+#[forward_val_to_ref]
+impl<'a, T: Borrow<DynArray>> ops::Rem<T> for &'a DynArray {
+    type Output = DynArray;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        let rhs = rhs.borrow();
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 % e2).into() }
         )
     }
 }
@@ -209,6 +267,20 @@ impl<T: Borrow<DynArray>> ops::SubAssign<T> for DynArray {
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref mut lhs, ref rhs| { lhs.zip_mut_with(rhs, |e1, e2| *e1 -= *e2) }
         );
+    }
+}
+
+impl ops::Neg for DynArray {
+    type Output = DynArray;
+
+    fn neg(self) -> Self::Output {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64),
+            |ref s| {s.mapv(|v| !v).into() },
+            (i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|v| -v).into() },
+        )
     }
 }
 
@@ -283,7 +355,7 @@ impl DynArray {
         let rhs = other.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l == r)).into() }
@@ -294,10 +366,76 @@ impl DynArray {
         let rhs = other.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l != r)).into() }
+        )
+    }
+
+    /*
+    fn calc_max_elem_width_display(&self) -> usize {
+        let mut buf = String::with_capacity(64);
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.fold(0usize, |accum, v| {
+                buf.clear();
+                buf.write_fmt(format_args!("{}", v)).unwrap();
+                accum.max(buf.len())
+            }) }
+        )
+    }
+    */
+}
+
+impl fmt::Display for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { fmt::Display::fmt(s, f) }
+        )
+    }
+}
+
+impl fmt::Binary for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { fmt::Binary::fmt(s, f) }
+        )
+    }
+}
+
+impl fmt::LowerExp for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { fmt::LowerExp::fmt(s, f) }
+        )
+    }
+}
+
+impl fmt::UpperExp for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { fmt::UpperExp::fmt(s, f) }
+        )
+    }
+}
+
+
+impl fmt::LowerHex for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { fmt::LowerHex::fmt(s, f) }
         )
     }
 }

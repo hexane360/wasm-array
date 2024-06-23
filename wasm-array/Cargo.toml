@@ -10,6 +10,11 @@ crate-type = ["cdylib"]
 arraylib = { path = "../arraylib" }
 serde = { version = "^1.0", features = ["derive"] }
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
+console_error_panic_hook = { version = "0.1.1" }
+js-sys = "^0.3.69"
+logos = "^0.14.0"
+itertools.workspace = true
+
 
 [dependencies.web-sys]
 version = "^0.3.69"

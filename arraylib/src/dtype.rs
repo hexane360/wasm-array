@@ -293,23 +293,29 @@ impl PhysicalType for f64 { const DATATYPE: DataType = DataType::Float64; type B
 impl PhysicalType for Complex<f32> { const DATATYPE: DataType = DataType::Complex64; type BytesType = [u8; size_of::<Self>()]; }
 impl PhysicalType for Complex<f64> { const DATATYPE: DataType = DataType::Complex128; type BytesType = [u8; size_of::<Self>()]; }
 
+impl Into<&'static str> for DataType {
+    fn into(self) -> &'static str {
+        match self {
+            DataType::Boolean => "bool",
+            DataType::UInt8 => "uint8",
+            DataType::UInt16 => "uint16",
+            DataType::UInt32 => "uint32",
+            DataType::UInt64 => "uint64",
+            DataType::Int8 => "int8",
+            DataType::Int16 => "int16",
+            DataType::Int32 => "int32",
+            DataType::Int64 => "int64",
+            DataType::Float32 => "float32",
+            DataType::Float64 => "float64",
+            DataType::Complex64 => "complex64",
+            DataType::Complex128 => "complex128",
+        }
+    }
+}
+
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            DataType::Boolean => "bool",
-            DataType::UInt8 => "u8",
-            DataType::UInt16 => "u16",
-            DataType::UInt32 => "u32",
-            DataType::UInt64 => "u64",
-            DataType::Int8 => "i8",
-            DataType::Int16 => "i16",
-            DataType::Int32 => "i32",
-            DataType::Int64 => "i64",
-            DataType::Float32 => "f32",
-            DataType::Float64 => "f64",
-            DataType::Complex64 => "c64",
-            DataType::Complex128 => "c128",
-        })
+        f.pad((*self).into())
     }
 }
 

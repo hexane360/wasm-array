@@ -10,6 +10,7 @@ ndarray.workspace = true
 num.workspace = true
 num-complex.workspace = true
 zerocopy.workspace = true
+itertools.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
