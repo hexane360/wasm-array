@@ -2,6 +2,7 @@ use std::any::Any;
 use std::ops;
 use std::borrow::{Borrow, Cow};
 use std::fmt;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
 use num_complex::{Complex, ComplexFloat};
@@ -12,11 +13,23 @@ use crate::dtype::{DataType, PhysicalType, Bool, promote_types};
 use crate::cast::Cast;
 use crate::error::ArrayError;
 
-#[derive(Debug)]
 pub struct DynArray {
     dtype: DataType,
     shape: Vec<usize>,
-    inner: Box<dyn Any>,
+    inner: Box<dyn Any + UnwindSafe + RefUnwindSafe>,
+}
+
+impl fmt::Debug for DynArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self;
+        f.debug_struct("DynArray")
+            .field("dtype", &s.dtype)
+            .field("shape", &s.shape)
+            .field("inner", &type_dispatch!(
+                (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+                |ref s| s as &dyn fmt::Debug
+            )).finish()
+    }
 }
 
 impl Clone for DynArray {
@@ -35,27 +48,27 @@ impl DynArray {
 
     pub fn shape(&self) -> Vec<usize> { self.shape.clone() }
 
-    pub fn from_typed<T: PhysicalType + Pod>(arr: ArrayD<T>) -> Self {
+    pub fn from_typed<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe>(arr: ArrayD<T>) -> Self {
         Self {
             dtype: T::DATATYPE,
             shape: arr.shape().into(),
-            inner: Box::new(arr) as Box<dyn Any>,
+            inner: Box::new(arr) as Box<dyn Any + UnwindSafe + RefUnwindSafe>,
         }
     }
 
     pub fn downcast<T: PhysicalType + Pod>(self) -> Option<ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
-        Some(*self.inner.downcast().unwrap())
+        Some(*(self.inner as Box<dyn Any>).downcast().unwrap())
     }
 
     pub fn downcast_ref<T: PhysicalType + Pod>(&self) -> Option<&ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
-        Some(self.inner.downcast_ref().unwrap())
+        Some((self.inner.as_ref() as &dyn Any).downcast_ref().unwrap())
     }
 
     pub fn downcast_mut<T: PhysicalType + Pod>(&mut self) -> Option<&mut ArrayD<T>> {
         if T::DATATYPE != self.dtype { return None; }
-        Some(self.inner.downcast_mut().unwrap())
+        Some((self.inner.as_mut() as &mut dyn Any).downcast_mut().unwrap())
     }
 
     pub fn zeros<Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, dtype: DataType) -> Self {
@@ -94,7 +107,63 @@ impl DynArray {
         }
     }
 
-    pub fn full<T: PhysicalType + Pod, Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, value: T) -> Self {
+    pub fn from_buf(buf: Box<[u8]>, dtype: DataType, shape: Box<[usize]>, strides: Option<Box<[isize]>>) -> Result<Self, String> {
+        //if strides.iter().any(|s| *s < 0) {
+        //    return Err("Negative strides are unsupported".to_owned());
+        //}
+        // cast isize to usize, this should handle negative strides correctly
+        let shape = match strides {
+            Some(strides) => shape.strides(bytemuck::cast_slice(&strides)),
+            // default to c order
+            None => shape.into_shape().into(),
+        };
+
+        Ok(match dtype {
+            DataType::UInt8 => ArrayD::<u8>::from_shape_vec(shape, buf.into_vec()).unwrap().into(),
+            DataType::Boolean => ArrayD::<Bool>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::UInt16 => ArrayD::<u16>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::UInt32 => ArrayD::<u32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::UInt64 => ArrayD::<u64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Int8 => ArrayD::<i8>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Int16 => ArrayD::<i16>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Int32 => ArrayD::<i32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Int64 => ArrayD::<i64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Float32 => ArrayD::<f32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Float64 => ArrayD::<f64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Complex64 => ArrayD::<Complex<f32>>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::Complex128 => ArrayD::<Complex<f64>>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+        })
+    }
+
+    pub fn strides(&self) -> Vec<isize> {
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.strides().into() }
+        )
+    }
+
+    pub fn to_buf(self) -> (Box<[u8]>, DataType, Box<[usize]>, Option<Box<[isize]>>) {
+        let (dtype, shape) = (self.dtype(), self.shape().into_boxed_slice());
+
+        let s = self;
+        // return None if C contiguous, regular strides otherwise
+        let strides = if type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.is_standard_layout() }
+        ) { None } else { Some(s.strides().into_boxed_slice())};
+
+        let buf: Box<[u8]> = type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |s| {
+                bytemuck::cast_slice_box(s.into_raw_vec().into_boxed_slice())
+            }
+        );
+
+        (buf, dtype, shape, strides)
+    }
+
+    pub fn full<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe, Sh: ShapeBuilder<Dim = IxDyn>>(shape: Sh, value: T) -> Self {
         ArrayD::<T>::from_elem(shape, value).into()
     }
 
@@ -138,8 +207,10 @@ where
     Ok(out)
 }
 
-impl<T: PhysicalType + Pod, D: Dimension> From<Array<T, D>> for DynArray {
-    fn from(value: Array<T, D>) -> Self { Self::from_typed(value.into_dyn()) }
+impl<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe, D: Dimension> From<Array<T, D>> for DynArray {
+    fn from(value: Array<T, D>) -> Self { 
+        Self::from_typed(value.into_dyn())
+    }
 }
 
 #[forward_val_to_ref]
@@ -393,7 +464,7 @@ impl fmt::Display for DynArray {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self;
         type_dispatch!(
-            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { fmt::Display::fmt(s, f) }
         )
     }

@@ -1,11 +1,23 @@
-import { to_dtype, ones, test, expr } from './pkg';
+import { to_dtype, ones, zeros, test, expr, from_interchange } from './pkg';
 
-//console.log(test());
-//console.log(to_dtype("uint8").toString());
-
-//console.log(ones([1, 5], "float32").toString());
+zeros([1, 5], "float32");
+zeros([1, 5], "u8");
 
 //console.log(exec(["1. + ", " + 5"], [ones([1, 5], "float32")]).toString());
 
-let a = ones([1, 5], "int32");
-console.log(expr`1. + 5 * ${a}`.toString());
+const buffer = new ArrayBuffer(8);
+
+let view = new Uint8Array(new ArrayBuffer(8));
+view = view.map((_, index) => index)
+
+console.log(view.version);
+
+let a = from_interchange({
+    'data': view,
+    'typestr': '<u1',
+    'shape': [1, 8],
+    'strides': [8, -1],
+});
+console.log(a.toString());
+console.log(a.toInterchange());
+//console.log(expr`${a}`.toString());
