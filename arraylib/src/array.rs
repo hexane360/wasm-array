@@ -107,6 +107,7 @@ impl DynArray {
         }
     }
 
+
     pub fn from_buf(buf: Box<[u8]>, dtype: DataType, shape: Box<[usize]>, strides: Option<Box<[isize]>>) -> Result<Self, String> {
         //if strides.iter().any(|s| *s < 0) {
         //    return Err("Negative strides are unsupported".to_owned());
@@ -119,19 +120,19 @@ impl DynArray {
         };
 
         Ok(match dtype {
-            DataType::UInt8 => ArrayD::<u8>::from_shape_vec(shape, buf.into_vec()).unwrap().into(),
-            DataType::Boolean => ArrayD::<Bool>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::UInt16 => ArrayD::<u16>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::UInt32 => ArrayD::<u32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::UInt64 => ArrayD::<u64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Int8 => ArrayD::<i8>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Int16 => ArrayD::<i16>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Int32 => ArrayD::<i32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Int64 => ArrayD::<i64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Float32 => ArrayD::<f32>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Float64 => ArrayD::<f64>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Complex64 => ArrayD::<Complex<f32>>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
-            DataType::Complex128 => ArrayD::<Complex<f64>>::from_shape_vec(shape, bytemuck::cast_slice_box(buf).into_vec()).unwrap().into(),
+            DataType::UInt8 => ArrayD::<u8>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Boolean => ArrayD::<Bool>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::UInt16 => ArrayD::<u16>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::UInt32 => ArrayD::<u32>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::UInt64 => ArrayD::<u64>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Int8 => ArrayD::<i8>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Int16 => ArrayD::<i16>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Int32 => ArrayD::<i32>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Int64 => ArrayD::<i64>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Float32 => ArrayD::<f32>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Float64 => ArrayD::<f64>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Complex64 => ArrayD::<Complex<f32>>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
+            DataType::Complex128 => ArrayD::<Complex<f64>>::from_shape_vec(shape, align_and_cast_buf(buf)).unwrap().into(),
         })
     }
 
@@ -156,7 +157,7 @@ impl DynArray {
         let buf: Box<[u8]> = type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |s| {
-                bytemuck::cast_slice_box(s.into_raw_vec().into_boxed_slice())
+                align_and_cast_buf(s.into_raw_vec().into_boxed_slice()).into_boxed_slice()
             }
         );
 
@@ -177,6 +178,15 @@ impl DynArray {
             }
         )
     }
+}
+
+fn align_and_cast_buf<T: bytemuck::Pod, U: bytemuck::NoUninit + bytemuck::AnyBitPattern>(buf: Box<[T]>) -> Vec<U> {
+    // first try to cast directly. this only works if alignment is the same
+    let buf = match bytemuck::try_cast_slice_box(buf) {
+        Ok(v) => return v.into_vec(),
+        Err((_, buf)) => buf,
+    };
+    bytemuck::pod_collect_to_vec(&buf)
 }
 
 pub(crate) fn co_broadcast<D1, D2, Output>(shape1: &D1, shape2: &D2) -> Result<Output, ShapeError>

@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, UnwindSafe};
 
 use serde::{Deserialize, Serialize, de, ser};
-use wasm_bindgen::convert::TryFromJsValue;
 use wasm_bindgen::prelude::*;
-use num::NumCast;
 
 pub mod expr;
 
@@ -79,7 +77,11 @@ impl JsArray {
 
     #[wasm_bindgen(js_name = toInterchange)]
     pub fn to_interchange(self) -> Result<JsValue, JsValue> {
-        Ok(serde_wasm_bindgen::to_value(&ArrayInterchange::from(self.inner)).map_err(|e| e.to_string())?)
+        Ok(ArrayInterchange::from(self.inner).serialize(
+            &serde_wasm_bindgen::Serializer::new()
+                .serialize_missing_as_null(true)
+                .serialize_maps_as_objects(true)
+        ).map_err(|e| e.to_string())?)
     }
 
     #[wasm_bindgen(js_name = toString)]
@@ -126,48 +128,6 @@ impl Into<Vec<u8>> for ArrayBuffer {
     fn into(self) -> Vec<u8> { self.inner.into_vec() }
 }
 
-impl TryFromJsValue for ArrayBuffer {
-    type Error = String;
-
-    fn try_from_js_value(value: JsValue) -> Result<Self, Self::Error> {
-        if let Some(v) = value.dyn_ref::<js_sys::Uint8Array>() {
-            return Ok(ArrayBuffer { inner: v.to_vec().into_boxed_slice() })
-        }
-        if let Some(v) = value.dyn_ref::<js_sys::ArrayBuffer>() {
-            let v = js_sys::Uint8Array::new(v);
-            return Ok(ArrayBuffer { inner: v.to_vec().into_boxed_slice() })
-        }
-        from_array_buf_view(value).ok_or_else(|| "Expected an ArrayBuffer or ArrayBufferView".to_owned())
-    }
-}
-
-fn from_array_buf_view(value: JsValue) -> Option<ArrayBuffer> {
-    let buffer = js_sys::Reflect::get(&value, &JsValue::from_str("buffer")).ok()?.dyn_into::<js_sys::ArrayBuffer>().ok()?;
-    let byte_offset = js_sys::Reflect::get(&value, &JsValue::from_str("byte_offset")).ok()?.as_f64()? as u32;
-    let byte_length = js_sys::Reflect::get(&value, &JsValue::from_str("byte_length")).ok()?.as_f64()? as u32;
-
-    Some(ArrayBuffer {
-        inner: js_sys::Uint8Array::new_with_byte_offset_and_length(&buffer, byte_offset, byte_length).to_vec().into_boxed_slice()
-    })
-}
-
-fn get_object_field(obj: &JsValue, field: &'static str) -> Result<JsValue, String> {
-    let v: JsValue = js_sys::Reflect::get(obj, &JsValue::from_str(field)).unwrap();
-    if v.is_undefined() {
-        Err(format!("Object missing required field '{}'", field))
-    } else {
-        Ok(v)
-    }
-}
-
-macro_rules! to_const { ( $n:expr, $const:ty ) => { $const }; }
-macro_rules! get_object_fields {
-    ( $obj:ident, ($( $n:expr ),*) ) => { {
-        let ret: Result<($( to_const!($n, JsValue) ),*), String> = try { ($( get_object_field(&$obj, $n)? ),*) };
-        ret
-    } };
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArrayInterchange {
     #[serde(rename = "data", with = "serde_bytes")]
@@ -204,52 +164,7 @@ fn deserialize_typestr<'de, D: de::Deserializer<'de>>(de: D) -> Result<DataType,
     de.deserialize_str(TypestrVisitor)
 }
 
-impl TryFromJsValue for ArrayInterchange {
-    type Error = String;
-
-    fn try_from_js_value(value: JsValue) -> Result<Self, Self::Error> {
-        if !value.is_object() { return Err("Expected an object".to_owned()) }
-        let (buf, dtype, shape, strides) = get_object_fields!(value, ("data", "typestr", "shape", "strides"))?;
-
-        let buf = ArrayBuffer::try_from_js_value(buf)?.into();
-        let dtype = parse_typestr(&dtype.as_string().ok_or_else(|| "Field 'typestr' must be a string, and valid UTF-8".to_owned())?)?;
-
-        let shape = shape.dyn_into::<js_sys::Array>().map_err(|_| "Field 'shape' must be an array".to_owned())?.into_iter()
-            .map(|v| v.as_f64().and_then(|v| <usize as NumCast>::from(v))).try_collect().ok_or_else(|| "Field 'shape' must be an array of non-negative ints")?;
-
-        let strides = if strides.is_null() { None } else {
-            Some(strides.dyn_into::<js_sys::Array>().map_err(|_| "Field 'strides' must be an array".to_owned())?.into_iter()
-                .map(|v| v.as_f64().and_then(|v| <isize as NumCast>::from(v))).try_collect().ok_or_else(|| "Field 'strides' must be an array of ints")?)
-        };
-
-        let version = match get_object_field(&value, "version") {
-            Ok(v) => v.as_f64().ok_or_else(|| "Field 'version' must be a number".to_owned())? as u32,
-            Err(_) => 3,
-        };
-
-        Ok(ArrayInterchange {
-            buf, dtype, shape, strides, version
-        })
-    }
-}
-
 impl ArrayInterchange {
-    pub fn into_js_object(self) -> js_sys::Object {
-        let map = js_sys::Map::new();
-        map.set(&"data".to_owned().into(), &js_sys::Uint8Array::from(self.buf.as_ref()).buffer());
-        map.set(&"typestr".to_owned().into(), &to_typestr(&self.dtype).to_string().into());
-        map.set(&"shape".to_owned().into(), &js_sys::Array::from_iter(self.shape.into_iter().map(|v| JsValue::from_f64(*v as f64))));
-        map.set(&"version".to_owned().into(), &JsValue::from_f64(self.version as f64));
-
-        let strides_obj = match self.strides {
-            Some(strides) => &js_sys::Array::from_iter(strides.into_iter().map(|v| JsValue::from_f64(*v as f64))),
-            None => &JsValue::null(),
-        };
-        map.set(&"strides".to_owned().into(), &strides_obj);
-
-        js_sys::Object::from_entries(&map.into()).unwrap()
-    }
-
     pub fn to_array(self) -> Result<DynArray, String> {
         DynArray::from_buf(self.buf, self.dtype, self.shape, self.strides)
     }
@@ -362,7 +277,7 @@ pub fn set_panic_hook() {
 
 #[wasm_bindgen(start)]
 fn main() -> Result<(), JsValue> {
-    set_panic_hook();
+    //set_panic_hook();
     Ok(())
 }
 
