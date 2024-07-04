@@ -8,3 +8,4 @@ mod cast;
 //pub mod typedarray;
 pub mod error;
 pub mod array;
+pub mod colors;

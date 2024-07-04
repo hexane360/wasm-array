@@ -1,24 +1,12 @@
-import { to_dtype, ones, zeros, test, expr, from_interchange } from './pkg';
+import { ones, zeros, expr, linspace } from './pkg';
 
-zeros([1, 5], "float32");
-zeros([1, 5], "u8");
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext("2d");
 
-//console.log(exec(["1. + ", " + 5"], [ones([1, 5], "float32")]).toString());
+let arr = linspace(1., 10., 500, "float32").broadcast_to([100, 500]);
+arr = expr`1 - ${arr}^-0.4`;
 
-const buffer = new ArrayBuffer(8);
+const imageData = ctx.createImageData(500, 100);
+imageData.data.set(arr.apply_cmap());
+ctx.putImageData(imageData, 0, 0);
 
-let view = new Uint8Array(new ArrayBuffer(16));
-view = view.map((_, index) => index * (1 - index % 2))
-
-console.log(view.version);
-
-let a = from_interchange({
-    'data': view,
-    'typestr': '<u2',
-    'shape': [1, 8],
-    'strides': [8, -1],
-});
-console.log(a.toString());
-console.log(a.toJSON());
-console.log(a.toInterchange());
-//console.log(expr`${a}`.toString());

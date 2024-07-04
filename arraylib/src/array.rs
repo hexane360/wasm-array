@@ -5,13 +5,15 @@ use std::fmt;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
+use num::Float;
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip};
+use ndarray::{Array, Array1, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, PhysicalType, Bool, promote_types};
 use crate::cast::Cast;
 use crate::error::ArrayError;
+use crate::colors::{magma, apply_cmap_u8};
 
 pub struct DynArray {
     dtype: DataType,
@@ -107,7 +109,6 @@ impl DynArray {
         }
     }
 
-
     pub fn from_buf(buf: Box<[u8]>, dtype: DataType, shape: Box<[usize]>, strides: Option<Box<[isize]>>) -> Result<Self, String> {
         //if strides.iter().any(|s| *s < 0) {
         //    return Err("Negative strides are unsupported".to_owned());
@@ -168,6 +169,10 @@ impl DynArray {
         ArrayD::<T>::from_elem(shape, value).into()
     }
 
+    pub fn linspace<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Float>(start: T, end: T, n: usize) -> Self {
+        Array1::linspace(start, end, n).into_dyn().into()
+    }
+
     pub fn broadcast_with(&self, other: &DynArray) -> Result<(DynArray, DynArray), ShapeError> {
         let (lhs, rhs) = (self, other);
         type_dispatch!(
@@ -175,6 +180,17 @@ impl DynArray {
             |ref lhs, ref rhs| {
                 let broadcast_shape: IxDyn = co_broadcast(&lhs.raw_dim().into_dyn(), &rhs.raw_dim().into_dyn())?;
                 Ok((lhs.broadcast(broadcast_shape.clone()).unwrap().mapv(|v| v).into(), rhs.broadcast(broadcast_shape).unwrap().mapv(|v| v).into()))
+            }
+        )
+    }
+
+    pub fn broadcast_to<Sh: ShapeBuilder<Dim = IxDyn>>(self, shape: Sh) -> Result<DynArray, ShapeError> {
+        // TODO because this 
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |s| {
+                Ok(s.broadcast(shape.into_shape().raw_dim().clone()).ok_or_else(|| ShapeError::from_kind(ErrorKind::IncompatibleShape))?.to_owned().into())
             }
         )
     }
@@ -451,6 +467,30 @@ impl DynArray {
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l != r)).into() }
+        )
+    }
+
+    pub fn pow<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        // TODO more granular dispatch here
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| l.wrapping_pow(*r as u32)).into() },
+            (f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| l.powf(*r)).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| l.powc(*r)).into() },
+        )
+    }
+
+    pub fn apply_cmap(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64),
+            |ref s| { apply_cmap_u8(magma(), s.view()).into() }
         )
     }
 

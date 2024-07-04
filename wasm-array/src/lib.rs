@@ -94,6 +94,19 @@ impl JsArray {
         }
         s
     }
+
+    #[wasm_bindgen]
+    pub fn broadcast_to(self, shape: Box<[usize]>) -> Result<JsArray, String> {
+        match self.inner.broadcast_to(&*shape) {
+            Ok(v) => Ok(v.into()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn apply_cmap(&self) -> Vec<u8> {
+        self.inner.apply_cmap().downcast::<u8>().unwrap().into_raw_vec()
+    }
 }
 
 #[wasm_bindgen]
@@ -236,6 +249,21 @@ pub fn zeros(shape: Box<[usize]>, dtype: &str) -> Result<JsArray, String> {
         let dtype = to_dtype(dtype)?;
         let arr = DynArray::ones(shape.as_ref(), dtype.inner);
         Ok(arr.into())
+    })
+}
+
+#[wasm_bindgen]
+pub fn linspace(start: f64, end: f64, n: usize, dtype: Option<String>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let dtype = if let Some(d) = dtype {
+            to_dtype(&d)?.inner
+        } else { DataType::Float64 };
+
+        Ok(match dtype {
+            DataType::Float32 => DynArray::linspace(start as f32, end as f32, n),
+            DataType::Float64 => DynArray::linspace(start as f64, end as f64, n),
+            dtype => return Err(format!("'linspace' not supported for dtype '{}'", dtype)),
+        }.into())
     })
 }
 

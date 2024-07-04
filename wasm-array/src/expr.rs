@@ -26,6 +26,8 @@ pub enum Token {
     CloseParen,
     #[token(",")]
     Comma,
+    #[token("^")]
+    Caret,
     #[regex(r"[+-]?(?&dec)", parse_int)]
     IntLit(i64),
     // inf, nan
@@ -79,6 +81,7 @@ impl<I: Iterator<Item = Result<Token, ParseError>>> Lexer<I> {
             Token::Minus => Some(BinaryOp::Sub),
             Token::Times => Some(BinaryOp::Mul),
             Token::Divide => Some(BinaryOp::Div),
+            Token::Caret => Some(BinaryOp::Pow),
             _ => None,
         }))
     }
@@ -129,6 +132,7 @@ pub enum BinaryOp {
     Mul,
     Div,
     Rem,
+    Pow,
 }
 
 impl BinaryOp {
@@ -137,11 +141,15 @@ impl BinaryOp {
             BinaryOp::Rem => 4,
             BinaryOp::Add | BinaryOp::Sub => 5,
             BinaryOp::Mul | BinaryOp::Div => 6,
+            BinaryOp::Pow => 7,
         }
     }
 
     pub fn right_assoc(&self) -> bool {
-        false
+        match self {
+            BinaryOp::Pow => true,
+            _ => false,
+        }
     }
 
     pub fn precedes(&self, other: &BinaryOp) -> bool {
@@ -223,6 +231,7 @@ impl BinaryExpr {
             BinaryOp::Mul => { lhs * rhs },
             BinaryOp::Sub => { lhs - rhs },
             BinaryOp::Rem => { lhs % rhs },
+            BinaryOp::Pow => { lhs.pow(rhs) },
         })
     }
 }

@@ -11,6 +11,7 @@ num.workspace = true
 num-complex.workspace = true
 zerocopy.workspace = true
 itertools.workspace = true
+include_bytes_aligned = "0.1.3"
 
 [dev-dependencies]
 rstest.workspace = true
