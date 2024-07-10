@@ -50,6 +50,10 @@ impl DynArray {
 
     pub fn shape(&self) -> Vec<usize> { self.shape.clone() }
 
+    pub fn from_val<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe>(val: T) -> Self {
+        Self::from_typed(ArrayD::from_elem(IxDyn(&[]), val))
+    }
+
     pub fn from_typed<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe>(arr: ArrayD<T>) -> Self {
         Self {
             dtype: T::DATATYPE,
@@ -434,7 +438,7 @@ impl DynArray {
         }
     }
 
-    pub fn abs(self) -> DynArray {
+    pub fn abs(&self) -> DynArray {
         let s = self;
 
         type_dispatch!(
@@ -445,6 +449,24 @@ impl DynArray {
             |ref s| { s.mapv(|e| e.saturating_abs()).into() },
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.mapv(|e| e.abs()).into() },
+        )
+    }
+
+    pub fn exp(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.exp()).into() },
+        )
+    }
+
+    pub fn conj(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref s| { s.clone().into() },
+            (Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.conj()).into() },
         )
     }
 

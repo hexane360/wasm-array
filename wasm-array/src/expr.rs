@@ -3,8 +3,10 @@ use std::str::FromStr;
 use std::rc::Rc;
 use std::collections::HashMap;
 
+use num::Complex;
 use itertools::Itertools;
 use logos::Logos;
+
 use arraylib::array::DynArray;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
@@ -28,6 +30,8 @@ pub enum Token {
     Comma,
     #[token("^")]
     Caret,
+    #[token("pi")]
+    Pi,
     #[regex(r"[+-]?(?&dec)", parse_int)]
     IntLit(i64),
     // inf, nan
@@ -39,11 +43,21 @@ pub enum Token {
     // 1e5
     #[regex(r"[+-]?(?&dec)(?&exp)", parse_float)]
     FloatLit(f64),
+    // 5j, 5.j, 5.5j, 5e3j
+    #[regex(r"[+-]?(?&dec)(\.(?&dec))?(?&exp)?j", parse_complex)]
+    // .5j, .5e-3j
+    #[regex(r"[+-]?\.(?&dec)(?&exp)?j", parse_complex)]
+    ComplexLit(Complex<f64>),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9]*", |lexer| Rc::from(lexer.slice()))]
     Ident(Rc<str>),
     ArrayLit(DynArray),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9]*\(", |lexer| Rc::from(lexer.slice().strip_suffix('(').unwrap()))]
     FuncOpen(Rc<str>),
+}
+
+fn parse_complex<'a>(lexer: &mut logos::Lexer<'a, Token>) -> Result<Complex<f64>, ParseFloatError> {
+    let s = lexer.slice();
+    f64::from_str(&s[..s.len()-1].replace("_", "")).map(|v| Complex::new(0., v))
 }
 
 fn parse_float<'a>(lexer: &mut logos::Lexer<'a, Token>) -> Result<f64, ParseFloatError> {
@@ -98,6 +112,9 @@ impl<I: Iterator<Item = Result<Token, ParseError>>> Lexer<I> {
         Ok(match self.peek()? {
             Some(Token::IntLit(value)) => Some(Expr::Literal(LiteralExpr::Int(value))),
             Some(Token::FloatLit(value)) => Some(Expr::Literal(LiteralExpr::Float(value))),
+            Some(Token::ComplexLit(value)) => Some(Expr::Literal(LiteralExpr::Complex(value))),
+            // TODO handle f32/f64 consts here
+            Some(Token::Pi) => Some(Expr::Const("pi", std::f64::consts::PI)),
             Some(Token::ArrayLit(value)) => Some(Expr::Literal(LiteralExpr::Array(value.into()))),
             Some(Token::Ident(variable)) => Some(Expr::Variable(VariableExpr(variable.into()))),
             Some(_) => None,
@@ -120,6 +137,7 @@ pub enum Expr {
     Unary(UnaryExpr),
     Binary(BinaryExpr),
     Literal(LiteralExpr),
+    Const(&'static str, f64),
     Variable(VariableExpr),
     Parenthesized(Box<Expr>),
     FuncCall(FuncExpr),
@@ -183,8 +201,9 @@ pub struct BinaryExpr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpr {
-    Float(f64),
     Int(i64),
+    Float(f64),
+    Complex(Complex<f64>),
     Array(Rc<DynArray>),
 }
 
@@ -203,28 +222,77 @@ pub enum ExecError {
     Other(String),
 }
 
+pub trait ArrayFunc {
+    fn name(&self) -> &'static str;
+    fn call(&self, inputs: &[DynArray]) -> Result<DynArray,  ExecError>;
+}
+
+pub struct UnaryFunc<F: Fn(&DynArray) -> DynArray> {
+    inner: F,
+    name: &'static str,
+}
+
+impl<F: Fn(&DynArray) -> DynArray> UnaryFunc<F> {
+    pub fn new(name: &'static str, f: F) -> Self { Self { inner: f, name }}
+}
+
+impl<F: Fn(&DynArray) -> DynArray> ArrayFunc for UnaryFunc<F> {
+    fn name(&self) -> &'static str { self.name }
+
+    fn call(&self, inputs: &[DynArray]) -> Result<DynArray,  ExecError> {
+        if inputs.len() != 1 { return Err(ExecError::Other(format!("Function '{}' must be called with one argument", self.name))) }
+        Ok((self.inner)(&inputs[0]))
+    }
+}
+
+pub struct BinaryFunc<F: Fn(&DynArray, &DynArray) -> DynArray> {
+    inner: F,
+    name: &'static str,
+}
+
+impl<F: Fn(&DynArray, &DynArray) -> DynArray> BinaryFunc<F> {
+    pub fn new(name: &'static str, f: F) -> Self { Self { inner: f, name }}
+}
+
+impl<F: Fn(&DynArray, &DynArray) -> DynArray> ArrayFunc for BinaryFunc<F> {
+    fn name(&self) -> &'static str { self.name }
+
+    fn call(&self, inputs: &[DynArray]) -> Result<DynArray,  ExecError> {
+        if inputs.len() != 2 { return Err(ExecError::Other(format!("Function '{}' must be called with two arguments", self.name))) }
+        Ok((self.inner)(&inputs[0], &inputs[1]))
+    }
+}
+
+pub type FuncMap = HashMap<&'static str, Box<dyn ArrayFunc + Sync + Send>>;
+
 impl Expr {
-    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>) -> Result<DynArray, ExecError> {
+    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
         match self {
-            Expr::Parenthesized(inner) => inner.exec(vars),
-            Expr::FuncCall(_e) => unimplemented!(),
-            Expr::Binary(e) => e.exec(vars),
-            Expr::Unary(e) => e.exec(vars),
+            Expr::Parenthesized(inner) => inner.exec(vars, funcs),
+            Expr::FuncCall(e) => {
+                let func = funcs.get(&*e.name).ok_or_else(|| ExecError::Other(format!("Undefined function '{}'", &e.name)))?;
+                let args: Vec<DynArray> = e.args.iter().map(|e| e.exec(vars, funcs)).try_collect()?;
+                func.call(&args)
+            },
+            Expr::Binary(e) => e.exec(vars, funcs),
+            Expr::Unary(e) => e.exec(vars, funcs),
             Expr::Variable(v) => {
                 vars.get(&v.0).map(|v| v.clone())
                     .ok_or_else(|| ExecError::Other(format!("Undefined variable '{}'", &v.0)))
             }
-            Expr::Literal(LiteralExpr::Float(v)) => { Ok(DynArray::full(vec![], *v)) },
-            Expr::Literal(LiteralExpr::Int(v)) => { Ok(DynArray::full(vec![], *v)) },
+            Expr::Const(_name, v) => { Ok(DynArray::from_val(*v)) },
+            Expr::Literal(LiteralExpr::Complex(v)) => { Ok(DynArray::from_val(*v)) },
+            Expr::Literal(LiteralExpr::Float(v)) => { Ok(DynArray::from_val(*v)) },
+            Expr::Literal(LiteralExpr::Int(v)) => { Ok(DynArray::from_val(*v)) },
             Expr::Literal(LiteralExpr::Array(v)) => { Ok(v.as_ref().clone()) },
         }
     }
 }
 
 impl BinaryExpr {
-    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>) -> Result<DynArray, ExecError> {
-        let lhs = self.lhs.exec(vars)?;
-        let rhs = self.rhs.exec(vars)?;
+    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
+        let lhs = self.lhs.exec(vars, funcs)?;
+        let rhs = self.rhs.exec(vars, funcs)?;
         Ok(match self.op {
             BinaryOp::Add => { lhs + rhs },
             BinaryOp::Div => { lhs / rhs },
@@ -237,8 +305,8 @@ impl BinaryExpr {
 }
 
 impl UnaryExpr {
-    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>) -> Result<DynArray, ExecError> {
-        let inner = self.inner.exec(vars)?;
+    pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
+        let inner = self.inner.exec(vars, funcs)?;
         Ok(match self.op {
             UnaryOp::Neg => { -inner },
             UnaryOp::Pos => { inner },

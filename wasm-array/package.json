@@ -1,4 +1,7 @@
 {
+    "name": "wasm-array",
+    "version": "0.1.0",
+    "author": {"name": "Colin Gilgenbach", "email": "hexane@mit.edu"},
     "scripts": {
       "build": "webpack",
       "serve": "webpack serve"
