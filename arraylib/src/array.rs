@@ -10,7 +10,7 @@ use num_complex::{Complex, ComplexFloat};
 use ndarray::{Array, Array1, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
-use crate::dtype::{DataType, PhysicalType, Bool, promote_types};
+use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, promote_types};
 use crate::cast::Cast;
 use crate::error::ArrayError;
 use crate::colors::{magma, apply_cmap_u8};
@@ -49,6 +49,8 @@ impl DynArray {
     pub fn dtype(&self) -> DataType { self.dtype }
 
     pub fn shape(&self) -> Vec<usize> { self.shape.clone() }
+
+    pub fn ndim(&self) -> usize { self.shape.len() }
 
     pub fn from_val<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe>(val: T) -> Self {
         Self::from_typed(ArrayD::from_elem(IxDyn(&[]), val))
@@ -435,6 +437,21 @@ impl DynArray {
         ) {
             Some(arr) => Cow::Owned(arr),
             None => std::panic::panic_any(ArrayError::type_err(format!("Unable to cast dtype {} to {}", init_dtype, dtype))),
+        }
+    }
+
+    pub fn cast_category<'a>(&'a self, category: DataTypeCategory) -> Cow<'a, DynArray> {
+        let init_dtype = self.dtype();
+        if init_dtype.category() == category {
+            return Cow::Borrowed(self);
+        }
+        let s = self;
+        match init_dtype.as_category(category) {
+            Some(dtype) => Cow::Owned(type_dispatch!(
+                (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+                |ref s| cast_to(s, dtype).unwrap()
+            )),
+            None => std::panic::panic_any(ArrayError::type_err(format!("Unable to cast dtype {} to {}", init_dtype, category))),
         }
     }
 

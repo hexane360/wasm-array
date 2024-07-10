@@ -211,7 +211,7 @@ mod private {
     }
 }
 
-use private::{CategorizedDataType, BooleanDataType, UnsignedDataType, SignedDataType, FloatingDataType, ComplexDataType};
+use private::{BooleanDataType, CategorizedDataType, ComplexDataType, FloatingDataType, IntoDataTypePrivate, SignedDataType, UnsignedDataType};
 
 pub trait IntoDataType: private::IntoDataTypePrivate {
     fn as_dtype(&self) -> DataType { <Self as private::IntoDataTypePrivate>::as_dtype(self) }
@@ -319,6 +319,24 @@ impl Display for DataType {
     }
 }
 
+impl Into<&'static str> for DataTypeCategory {
+    fn into(self) -> &'static str {
+        match self {
+            DataTypeCategory::Boolean => "boolean",
+            DataTypeCategory::Unsigned => "unsigned",
+            DataTypeCategory::Signed => "signed",
+            DataTypeCategory::Floating => "floating",
+            DataTypeCategory::Complex => "complex",
+        }
+    }
+}
+
+impl Display for DataTypeCategory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad((*self).into())
+    }
+}
+
 /// Perform type promotion on `tys`.
 /// Promotion happens in two steps. First, we promote to the
 /// common general `category` of types, e.g. unsigned, floating, complex.
@@ -342,4 +360,14 @@ where T: IntoDataType + 'a, I: IntoIterator<Item = &'a T> + Copy {
     dtypes.into_iter().map(|s| s.as_dtype_categorized().promote_to_category(min_category).expect("Mismatch between min_category and promote_to_category")) 
     // and take the maximum within that category
         .max().unwrap().uncategorized()
+}
+
+impl DataType {
+    pub fn category(self) -> DataTypeCategory {
+        self.as_dtype_categorized().category()
+    }
+
+    pub fn as_category(self, category: DataTypeCategory) -> Option<DataType> {
+        self.as_dtype_categorized().promote_to_category(category).map(|dtype| dtype.uncategorized())
+    }
 }

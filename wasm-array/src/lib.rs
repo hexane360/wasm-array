@@ -20,6 +20,7 @@ use expr::{parse_with_literals, Token, ArrayFunc, UnaryFunc, FuncMap};
 use arraylib::array::DynArray;
 use arraylib::dtype::DataType;
 use arraylib::error::ArrayError;
+use arraylib::fft;
 use arraylib::colors::named_colors;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -50,7 +51,10 @@ type NestedArray<T> = T | ReadonlyArray<NestedArray<T>>;
 type ArrayLike = NArray | NestedArray<number> | NestedArray<BigInt> | TypedArray;
 
 type ShapeLike = ReadonlyArray<number> | Uint8Array | Uint16Array | Uint32Array | BigUint64Array;
-type StridesLike = ShapeLike | Int8Array | Int16Array | Int32Array | BigInt64Array
+type StridesLike = ShapeLike | Int8Array | Int16Array | Int32Array | BigInt64Array;
+type AxesLike = StridesLike;
+
+type FFTNorm = "backward" | "ortho" | "forward";
 
 export function expr(strs: ReadOnlyArray<string>, ...lits: ReadonlyArray<NArray>): NArray;
 export function linspace(start: number, end: number, n: number, dtype?: DataTypeLike): NArray;
@@ -102,6 +106,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ShapeLike")]
     pub type ShapeLike;
+
+    #[wasm_bindgen(typescript_type = "AxesLike")]
+    pub type AxesLike;
+
+    #[wasm_bindgen(typescript_type = "FFTNorm")]
+    pub type FFTNorm;
 }
 
 impl TryInto<Array1<f32>> for ColorLike {
@@ -397,6 +407,36 @@ impl JsArray {
         //let invalid_color = if invalid_color.is_null() { None } else { Some(get_color(invalid_color)?) };
 
         Ok(Clamped(self.inner.apply_cmap().downcast::<u8>().unwrap().into_raw_vec()))
+    }
+
+    pub fn fft(&self, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+        catch_panic(|| {
+            let axes: Box<[isize]> = match axes {
+                None => (0..self.shape().len()).into_iter().map(|v| v as isize).collect(),
+                Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
+            };
+            let norm = norm.map(|norm| match norm.obj.as_string() {
+                Some(s) => fft::FFTNorm::try_from(s.as_ref()),
+                None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
+            }).transpose()?;
+
+            Ok(fft::fft(&self.inner, &axes, norm, |s| { log(s.as_ref()) }).into())
+        })
+    }
+
+    pub fn ifft(&self, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+        catch_panic(|| {
+            let axes: Box<[isize]> = match axes {
+                None => (0..self.shape().len()).into_iter().map(|v| v as isize).collect(),
+                Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
+            };
+            let norm = norm.map(|norm| match norm.obj.as_string() {
+                Some(s) => fft::FFTNorm::try_from(s.as_ref()),
+                None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
+            }).transpose()?;
+
+            Ok(fft::ifft(&self.inner, &axes, norm).into())
+        })
     }
 
     #[wasm_bindgen(js_name = "__getTypeId")]
