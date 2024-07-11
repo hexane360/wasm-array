@@ -1,4 +1,4 @@
-use ndarray::{arr1, arr2};
+use ndarray::{Array, arr1, arr2};
 
 use arraylib::array::DynArray;
 use arraylib::dtype::DataType;
@@ -24,6 +24,27 @@ fn test_add_type_promote() {
 
     let expected: DynArray = arr1(&[40i64, 100i64, 200i64]).into();
     assert_eq!(expected, a1 + a2);
+}
+
+#[test]
+fn test_matmul() {
+    let lhs: DynArray = Array::from_shape_vec(vec![1, 2, 3], vec![
+        1f32, 2., 5., 1., 2., 5.
+    ]).unwrap().into();
+
+    let rhs: DynArray = Array::from_shape_vec(vec![2, 3, 3], vec![
+        5f32, 10., 15., 5., 10., 15.,
+        5., 10., 15., 5., 10., 15.,
+        5., 10., 15., 5., 10., 15.,
+    ]).unwrap().into();
+
+    let out = lhs.mat_mul(rhs);
+    assert_eq!(vec![1, 2, 2, 3], out.shape());
+    assert_eq!(out.dtype(), DataType::Float32);
+    assert_eq!(
+        out.downcast::<f32>().unwrap().into_raw_vec(),
+        &[40.0f32, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0]
+    )
 }
 
 #[test]

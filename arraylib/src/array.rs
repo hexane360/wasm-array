@@ -423,6 +423,40 @@ fn cast_to<T: Cast + PhysicalType>(arr: &ArrayD<T>, dtype: DataType) -> Option<D
     )
 }
 
+#[inline]
+fn mat_mul_inner<T: PhysicalType + ndarray::LinalgScalar>(lhs: &ArrayD<T>, rhs: &ArrayD<T>) -> ArrayD<T> {
+    if lhs.ndim() < 1 || rhs.ndim() < 1 || lhs.shape()[lhs.ndim() - 1] != rhs.shape()[(1).min(rhs.ndim() - 1)] {
+        std::panic::panic_any(ArrayError::broadcast_err(format!("Unable to matrix multiply shapes {:?} and {:?}", lhs.shape(), rhs.shape())));
+    }
+    let mut rhs_view = rhs.view();
+    if rhs.ndim() > 1 {
+        rhs_view.swap_axes(0, 1);
+    }
+
+    let lhs_size: usize = lhs.shape()[..lhs.ndim() - 1].iter().product();
+    let rhs_size: usize = rhs_view.shape()[1..].iter().product();
+    let shared_size: usize = rhs_view.shape()[0];
+    let out_shape: Vec<usize> = lhs.shape()[..lhs.ndim() - 1].iter().chain(rhs_view.shape()[1..].iter()).copied().collect();
+
+    let lhs_array;
+    let lhs_view = if lhs.is_standard_layout() {
+        lhs.view().into_shape((lhs_size, shared_size)).unwrap()
+    } else {
+        lhs_array = Array::from_shape_vec((lhs_size, shared_size), lhs.iter().cloned().collect()).unwrap();
+        lhs_array.view()
+    };
+
+    let rhs_array;
+    let rhs_view = if rhs_view.is_standard_layout() {
+        rhs_view.into_shape((shared_size, rhs_size)).unwrap()
+    } else {
+        rhs_array = Array::from_shape_vec((shared_size, rhs_size), rhs.iter().cloned().collect()).unwrap();
+        rhs_array.view()
+    };
+
+    lhs_view.dot(&rhs_view).into_shape(out_shape).unwrap()
+}
+
 impl DynArray {
     pub fn cast<'a>(&'a self, dtype: DataType) -> Cow<'a, DynArray> {
         let init_dtype = self.dtype();
@@ -522,6 +556,16 @@ impl DynArray {
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| l.powf(*r)).into() },
             (Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| l.powc(*r)).into() },
+        )
+    }
+
+    pub fn mat_mul<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = (self.cast(ty), rhs.cast(ty));
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { mat_mul_inner(lhs, rhs).into() }
         )
     }
 

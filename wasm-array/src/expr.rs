@@ -30,6 +30,8 @@ pub enum Token {
     Comma,
     #[token("^")]
     Caret,
+    #[token("@")]
+    At,
     #[token("pi")]
     Pi,
     #[regex(r"[+-]?(?&dec)", parse_int)]
@@ -96,6 +98,7 @@ impl<I: Iterator<Item = Result<Token, ParseError>>> Lexer<I> {
             Token::Times => Some(BinaryOp::Mul),
             Token::Divide => Some(BinaryOp::Div),
             Token::Caret => Some(BinaryOp::Pow),
+            Token::At => Some(BinaryOp::MatMul),
             _ => None,
         }))
     }
@@ -151,6 +154,7 @@ pub enum BinaryOp {
     Div,
     Rem,
     Pow,
+    MatMul,
 }
 
 impl BinaryOp {
@@ -158,7 +162,7 @@ impl BinaryOp {
         match self {
             BinaryOp::Rem => 4,
             BinaryOp::Add | BinaryOp::Sub => 5,
-            BinaryOp::Mul | BinaryOp::Div => 6,
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::MatMul => 6,
             BinaryOp::Pow => 7,
         }
     }
@@ -299,6 +303,7 @@ impl BinaryExpr {
             BinaryOp::Mul => { lhs * rhs },
             BinaryOp::Sub => { lhs - rhs },
             BinaryOp::Rem => { lhs % rhs },
+            BinaryOp::MatMul => { lhs.mat_mul(rhs) },
             BinaryOp::Pow => { lhs.pow(rhs) },
         })
     }
