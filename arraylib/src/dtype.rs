@@ -370,4 +370,28 @@ impl DataType {
     pub fn as_category(self, category: DataTypeCategory) -> Option<DataType> {
         self.as_dtype_categorized().promote_to_category(category).map(|dtype| dtype.uncategorized())
     }
+
+    pub fn as_min_category(self, category: DataTypeCategory) -> DataType {
+        let category = self.as_dtype_categorized().category().max(category);
+        self.as_dtype_categorized().promote_to_category(category).expect("Mismatch between min_category and promote_to_category")
+            .uncategorized()
+    }
+
+    pub fn item_size(self) -> usize {
+        match self {
+            DataType::Boolean => size_of::<Bool>(),
+            DataType::UInt8 => size_of::<u8>(),
+            DataType::UInt16 => size_of::<u16>(),
+            DataType::UInt32 => size_of::<u32>(),
+            DataType::UInt64 => size_of::<u64>(),
+            DataType::Int8 => size_of::<i8>(),
+            DataType::Int16 => size_of::<i16>(),
+            DataType::Int32 => size_of::<i32>(),
+            DataType::Int64 => size_of::<i64>(),
+            DataType::Float32 => size_of::<f32>(),
+            DataType::Float64 => size_of::<f64>(),
+            DataType::Complex64 => size_of::<Complex<f32>>(),
+            DataType::Complex128 => size_of::<Complex<f64>>(),
+        }
+    }
 }

@@ -517,6 +517,15 @@ impl DynArray {
         }
     }
 
+    pub fn cast_min_category<'a>(&'a self, category: DataTypeCategory) -> Cow<'a, DynArray> {
+        let init_dtype = self.dtype();
+        let new_dtype = self.dtype().as_min_category(category);
+        if init_dtype.category() == new_dtype.category() {
+            return Cow::Borrowed(self);
+        }
+        self.cast(new_dtype)
+    }
+
     pub fn abs(&self) -> DynArray {
         let s = self;
 
@@ -532,7 +541,7 @@ impl DynArray {
     }
 
     pub fn exp(&self) -> DynArray {
-        let s = self;
+        let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.mapv(|e| e.exp()).into() },
@@ -540,10 +549,30 @@ impl DynArray {
     }
 
     pub fn sqrt(&self) -> DynArray {
-        let s = self;
+        let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.mapv(|e| e.sqrt()).into() },
+        )
+    }
+
+    pub fn ceil(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { s.clone().into() },
+            (f32, f64),
+            |ref s| { s.mapv(|e| e.ceil()).into() },
+        )
+    }
+
+    pub fn floor(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { s.clone().into() },
+            (f32, f64),
+            |ref s| { s.mapv(|e| e.floor()).into() },
         )
     }
 
