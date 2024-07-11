@@ -95,7 +95,7 @@ fn normalize_axis(axis: isize, ndim: usize) -> usize {
     }
 }
 
-pub fn fft<A: Borrow<DynArray>>(arr: A, axes: &[isize], norm: Option<FFTNorm>, log_fn: fn(String)) -> DynArray {
+pub fn fft<A: Borrow<DynArray>>(arr: A, axes: &[isize], norm: Option<FFTNorm>) -> DynArray {
     let mut s = arr.borrow().cast_category(DataTypeCategory::Complex).into_owned();
     let (shape, ndim) = (s.shape(), s.ndim());
     let norm = norm.unwrap_or_default();
@@ -128,8 +128,6 @@ pub fn fft<A: Borrow<DynArray>>(arr: A, axes: &[isize], norm: Option<FFTNorm>, l
                     FFTNorm::Forwards => Some(1f64 / len.to_f64().unwrap()),
                     FFTNorm::Ortho => Some(1f64 / len.to_f64().unwrap().sqrt()),
                 };
-
-                log_fn(format!("axis: {:?} norm_scale: {:?} arr: {:?}", axis, norm_scale, s.downcast_mut::<Complex<f64>>()));
 
                 fft_inplace(s.downcast_mut::<Complex<f64>>().unwrap().view_mut(), axis, plan.as_ref(), norm_scale);
             },

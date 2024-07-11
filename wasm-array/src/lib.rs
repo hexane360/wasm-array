@@ -57,7 +57,13 @@ type AxesLike = StridesLike;
 type FFTNorm = "backward" | "ortho" | "forward";
 
 export function expr(strs: ReadOnlyArray<string>, ...lits: ReadonlyArray<NArray>): NArray;
+
+export function indices(shape: ShapeLike, dtype?: DataTypeLike, sparse?: bool = false): Array<NArray>;
+export function arange(start: number, end?: number, dtype?: DataTypeLike): NArray;
+
 export function linspace(start: number, end: number, n: number, dtype?: DataTypeLike): NArray;
+export function logspace(start: number, end: number, n: number, dtype?: DataTypeLike, base?: number): NArray;
+export function geomspace(start: number, end: number, n: number, dtype?: DataTypeLike): NArray;
 "#;
 
 pub trait DowncastWasmExport: wasm_bindgen::convert::RefFromWasmAbi<Abi = u32> {
@@ -199,7 +205,7 @@ impl TryInto<DataType> for DataTypeLike {
 
 impl TryInto<Box<[usize]>> for ShapeLike {
     type Error = String;
-    
+
     fn try_into(self) -> Result<Box<[usize]>, Self::Error> {
         serde_wasm_bindgen::from_value::<Box<[usize]>>(self.obj).map_err(|e| e.to_string())
     }
@@ -420,7 +426,7 @@ impl JsArray {
                 None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
             }).transpose()?;
 
-            Ok(fft::fft(&self.inner, &axes, norm, |s| { log(s.as_ref()) }).into())
+            Ok(fft::fft(&self.inner, &axes, norm).into())
         })
     }
 
@@ -436,6 +442,34 @@ impl JsArray {
             }).transpose()?;
 
             Ok(fft::ifft(&self.inner, &axes, norm).into())
+        })
+    }
+
+    pub fn fft2(&self, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+        catch_panic(|| {
+            let norm = norm.map(|norm| match norm.obj.as_string() {
+                Some(s) => fft::FFTNorm::try_from(s.as_ref()),
+                None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
+            }).transpose()?;
+
+            Ok(fft::fft(&self.inner, &[-2, -1], norm).into())
+        })
+    }
+
+    pub fn ifft2(&self, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+        catch_panic(|| {
+            let norm = norm.map(|norm| match norm.obj.as_string() {
+                Some(s) => fft::FFTNorm::try_from(s.as_ref()),
+                None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
+            }).transpose()?;
+
+            Ok(fft::ifft(&self.inner, &[-2, -1], norm).into())
+        })
+    }
+
+    pub fn astype(&self, dtype: &DataTypeLike) -> Result<JsArray, String> {
+        catch_panic(|| {
+            Ok(self.inner.cast(dtype.try_into()?).into_owned().into())
         })
     }
 
@@ -474,6 +508,55 @@ pub fn zeros(shape: ShapeLike, dtype: &DataTypeLike) -> Result<JsArray, String> 
 }
 
 #[wasm_bindgen(skip_typescript)]
+pub fn arange(start: f64, end: Option<f64>, dtype: &DataTypeLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let dtype = if dtype.obj.is_undefined() || dtype.obj.is_null() {
+            DataType::Int64
+        } else { dtype.try_into()? };
+
+        let (start, end) = match (start, end) {
+            (start, Some(end)) => (start, end),
+            (start, None) => (0., start),
+        };
+
+        Ok(match dtype {
+            DataType::UInt8 => DynArray::arange(start as u8, end as u8),
+            DataType::UInt16 => DynArray::arange(start as u16, end as u16),
+            DataType::UInt32 => DynArray::arange(start as u32, end as u32),
+            DataType::UInt64 => DynArray::arange(start as u64, end as u64),
+            DataType::Int8 => DynArray::arange(start as i8, end as i8),
+            DataType::Int16 => DynArray::arange(start as i16, end as i16),
+            DataType::Int32 => DynArray::arange(start as i32, end as i32),
+            DataType::Int64 => DynArray::arange(start as i64, end as i64),
+            dtype => return Err(format!("'arange' not supported for dtype '{}'", dtype)),
+        }.into())
+    })
+}
+
+#[wasm_bindgen(skip_typescript)]
+pub fn indices(shape: ShapeLike, dtype: &DataTypeLike, sparse: Option<bool>) -> Result<Vec<JsArray>, String> {
+    catch_panic(|| {
+        let dtype = if dtype.obj.is_undefined() || dtype.obj.is_null() {
+            DataType::Int64
+        } else { dtype.try_into()? };
+        let shape: Box<[usize]> = shape.try_into()?;
+        let sparse = sparse.unwrap_or(false);
+
+        Ok(match dtype {
+            DataType::UInt8 => DynArray::indices::<u8>(&shape, sparse),
+            DataType::UInt16 => DynArray::indices::<u16>(&shape, sparse),
+            DataType::UInt32 => DynArray::indices::<u32>(&shape, sparse),
+            DataType::UInt64 => DynArray::indices::<u64>(&shape, sparse),
+            DataType::Int8 => DynArray::indices::<i8>(&shape, sparse),
+            DataType::Int16 => DynArray::indices::<i16>(&shape, sparse),
+            DataType::Int32 => DynArray::indices::<i32>(&shape, sparse),
+            DataType::Int64 => DynArray::indices::<i64>(&shape, sparse),
+            dtype => return Err(format!("'arange' not supported for dtype '{}'", dtype)),
+        }.into_iter().map(|arr| arr.into()).collect())
+    })
+}
+
+#[wasm_bindgen(skip_typescript)]
 pub fn linspace(start: f64, end: f64, n: usize, dtype: &DataTypeLike) -> Result<JsArray, String> {
     catch_panic(|| {
         let dtype = if dtype.obj.is_undefined() || dtype.obj.is_null() {
@@ -484,6 +567,37 @@ pub fn linspace(start: f64, end: f64, n: usize, dtype: &DataTypeLike) -> Result<
             DataType::Float32 => DynArray::linspace(start as f32, end as f32, n),
             DataType::Float64 => DynArray::linspace(start as f64, end as f64, n),
             dtype => return Err(format!("'linspace' not supported for dtype '{}'", dtype)),
+        }.into())
+    })
+}
+
+#[wasm_bindgen(skip_typescript)]
+pub fn logspace(start: f64, end: f64, n: usize, dtype: &DataTypeLike, base: Option<f64>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let dtype = if dtype.obj.is_undefined() || dtype.obj.is_null() {
+            DataType::Float64
+        } else { dtype.try_into()? };
+        let base = base.unwrap_or(10.);
+
+        Ok(match dtype {
+            DataType::Float32 => DynArray::logspace(start as f32, end as f32, n, base as f32),
+            DataType::Float64 => DynArray::logspace(start as f64, end as f64, n, base),
+            dtype => return Err(format!("'logspace' not supported for dtype '{}'", dtype)),
+        }.into())
+    })
+}
+
+#[wasm_bindgen(skip_typescript)]
+pub fn geomspace(start: f64, end: f64, n: usize, dtype: &DataTypeLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let dtype = if dtype.obj.is_undefined() || dtype.obj.is_null() {
+            DataType::Float64
+        } else { dtype.try_into()? };
+
+        Ok(match dtype {
+            DataType::Float32 => DynArray::geomspace(start as f32, end as f32, n),
+            DataType::Float64 => DynArray::geomspace(start as f64, end as f64, n),
+            dtype => return Err(format!("'geomspace' not supported for dtype '{}'", dtype)),
         }.into())
     })
 }
@@ -501,6 +615,7 @@ fn init_array_funcs() -> FuncMap {
     let funcs: Vec<Box<dyn ArrayFunc + Sync + Send>> = vec![
         Box::new(UnaryFunc::new("abs", |v| v.abs())),
         Box::new(UnaryFunc::new("exp", |v| v.exp())),
+        Box::new(UnaryFunc::new("sqrt", |v| v.sqrt())),
     ];
 
     funcs.into_iter().map(|f| (f.name(), f)).collect()

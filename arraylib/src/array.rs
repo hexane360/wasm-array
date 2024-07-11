@@ -5,9 +5,9 @@ use std::fmt;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
-use num::Float;
+use num::{Float, Zero, One};
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, Array1, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip};
+use ndarray::{Array, Array1, Array2, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, promote_types};
@@ -175,8 +175,36 @@ impl DynArray {
         ArrayD::<T>::from_elem(shape, value).into()
     }
 
+    pub fn arange<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + num::PrimInt>(start: T, end: T) -> Self {
+        Array1::from_iter(num::iter::range(start, end).into_iter()).into_dyn().into()
+    }
+
+    pub fn indices<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + num::PrimInt>(shape: &[usize], sparse: bool) -> Vec<Self> {
+        shape.iter().enumerate().map(|(i, s)| {
+            let arr = Array1::from_iter(num::iter::range(T::zero(), T::from(*s).unwrap()).into_iter()).into_dyn();
+            let slice: Vec<SliceInfoElem> = (0..shape.len()).map(|j| if i == j { SliceInfoElem::from(..) } else { SliceInfoElem::NewAxis }).collect();
+            let slice = arr.slice(&slice[..]);
+            if sparse { slice } else {
+                slice.broadcast(shape).unwrap()
+            }.as_standard_layout().to_owned().into()
+        }).collect()
+    }
+
     pub fn linspace<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Float>(start: T, end: T, n: usize) -> Self {
         Array1::linspace(start, end, n).into_dyn().into()
+    }
+
+    pub fn logspace<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Float>(start: T, end: T, n: usize, base: T) -> Self {
+        Array1::logspace(base, start, end, n).into_dyn().into()
+    }
+
+    pub fn geomspace<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Float>(start: T, end: T, n: usize) -> Self {
+        Array1::geomspace(start, end, n).expect("Invalid bounds for geomspace").into_dyn().into()
+    }
+
+    pub fn eye<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Zero + One>(ndim: usize) -> Self {
+        let arr: Array2<T> = Array2::eye(ndim);
+        arr.into_dyn().into()
     }
 
     pub fn broadcast_with(&self, other: &DynArray) -> Result<(DynArray, DynArray), ShapeError> {
@@ -508,6 +536,14 @@ impl DynArray {
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.mapv(|e| e.exp()).into() },
+        )
+    }
+
+    pub fn sqrt(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.sqrt()).into() },
         )
     }
 
