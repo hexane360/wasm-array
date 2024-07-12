@@ -9,3 +9,4 @@ pub mod error;
 pub mod array;
 pub mod fft;
 pub mod colors;
+pub(crate) mod util;

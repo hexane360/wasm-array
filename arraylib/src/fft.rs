@@ -5,8 +5,10 @@ use num::{Float, Zero, ToPrimitive};
 use ndarray::{Array1, ArrayViewMut, Axis, IxDyn, Dimension};
 use rustfft::{FftNum, FftPlanner, Fft};
 
-use crate::dtype::{DataType, DataTypeCategory, Complex};
-use crate::array::DynArray;
+use arraylib_macro::type_dispatch;
+use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Complex};
+use crate::array::{DynArray, roll_inner};
+use crate::util::normalize_axis;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum FFTNorm {
@@ -83,16 +85,6 @@ fn apply_scaling<'a, T, D>(mut arr: ArrayViewMut<'a, Complex<T>, D>, scale: T)
     where T: Float, D: Dimension
 {
     arr.mapv_inplace(|v| Complex::new(v.re * scale, v.im * scale))
-}
-
-fn normalize_axis(axis: isize, ndim: usize) -> usize {
-    if axis < 0 {
-        if (-axis as usize) > ndim { panic!("Axis {} out of range for ndim {}", axis, ndim); }
-        ndim - (-axis as usize)
-    } else {
-        if axis as usize + 1 > ndim { panic!("Axis {} out of range for ndim {}", axis, ndim); }
-        axis as usize
-    }
 }
 
 pub fn fft<A: Borrow<DynArray>>(arr: A, axes: &[isize], norm: Option<FFTNorm>) -> DynArray {
@@ -177,4 +169,36 @@ pub fn ifft<A: Borrow<DynArray>>(arr: A, axes: &[isize], norm: Option<FFTNorm>) 
         }
     }
     s
+}
+
+pub fn fftshift<A: Borrow<DynArray>>(arr: A, axes: &[isize]) -> DynArray {
+    let arr = arr.borrow();
+
+    let axes: Vec<usize> = axes.iter().map(|ax| normalize_axis(*ax, arr.ndim())).collect();
+
+    let mut ax_rolls: Vec<isize> = vec![0; arr.ndim()];
+    for (ax, size) in axes.into_iter().zip(arr.shape()) {
+        ax_rolls[ax] = (size >> 1) as isize;
+    }
+
+    type_dispatch!(
+        (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+        |ref arr| roll_inner(arr, &ax_rolls).into()
+    )
+}
+
+pub fn ifftshift<A: Borrow<DynArray>>(arr: A, axes: &[isize]) -> DynArray {
+    let arr = arr.borrow();
+
+    let axes: Vec<usize> = axes.iter().map(|ax| normalize_axis(*ax, arr.ndim())).collect();
+
+    let mut ax_rolls: Vec<isize> = vec![0; arr.ndim()];
+    for (ax, size) in axes.into_iter().zip(arr.shape()) {
+        ax_rolls[ax] = -((size >> 1) as isize);
+    }
+
+    type_dispatch!(
+        (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+        |ref arr| roll_inner(arr, &ax_rolls).into()
+    )
 }

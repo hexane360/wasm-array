@@ -5,6 +5,7 @@ use std::fmt;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
+use itertools::Itertools;
 use num::{Float, Zero, One};
 use num_complex::{Complex, ComplexFloat};
 use ndarray::{Array, Array1, Array2, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
@@ -14,6 +15,7 @@ use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, promote_types
 use crate::cast::Cast;
 use crate::error::ArrayError;
 use crate::colors::{magma, apply_cmap_u8};
+use crate::util::normalize_axis;
 
 pub struct DynArray {
     dtype: DataType,
@@ -485,6 +487,37 @@ fn mat_mul_inner<T: PhysicalType + ndarray::LinalgScalar>(lhs: &ArrayD<T>, rhs: 
     lhs_view.dot(&rhs_view).into_shape(out_shape).unwrap()
 }
 
+#[inline]
+pub(crate) fn roll_inner<T: PhysicalType>(arr: &ArrayD<T>, ax_rolls: &[isize]) -> ArrayD<T> {
+    assert_eq!(arr.ndim(), ax_rolls.len());
+
+    let shape = arr.shape();
+    // for each ax, list of (input slice, output slice)
+    let ax_slices: Vec<Vec<(SliceInfoElem, SliceInfoElem)>> = ax_rolls.iter().zip(shape).map(|(&roll, &size)| {
+        if roll == 0 || size == 0 {
+            vec![(SliceInfoElem::from(..), SliceInfoElem::from(..))]
+        } else {
+            let offset = roll.rem_euclid(size as isize) as usize;
+            vec![
+                // input slice, output slice
+                (SliceInfoElem::from(..size - offset), SliceInfoElem::from(offset..)),
+                (SliceInfoElem::from(size - offset..), SliceInfoElem::from(..offset)),
+            ]
+        }
+    }).collect();
+
+    // SAFETY: Along each axis, we either index the whole slice, or split into two sections ((offset..), (..offset)).
+    // In other words, we split the array into hyperoctants. However, we assign to each of these hyperoctants.
+    unsafe {
+        ArrayD::build_uninit(shape, |mut out| {
+            for idxs in ax_slices.into_iter().multi_cartesian_product() {
+                let (in_idxs, out_idxs): (Vec<SliceInfoElem>, Vec<SliceInfoElem>) = idxs.into_iter().unzip();
+                arr.slice(&in_idxs[..]).assign_to(out.slice_mut(&out_idxs[..]));
+            }
+        }).assume_init()
+    }
+}
+
 impl DynArray {
     pub fn cast<'a>(&'a self, dtype: DataType) -> Cow<'a, DynArray> {
         let init_dtype = self.dtype();
@@ -524,6 +557,24 @@ impl DynArray {
             return Cow::Borrowed(self);
         }
         self.cast(new_dtype)
+    }
+
+    pub fn roll(&self, rolls: &[isize], axes: &[isize]) -> DynArray {
+        if rolls.len() != axes.len() {
+            std::panic::panic_any(ArrayError::value_err("'rolls' must be same length as 'axes'"));
+        }
+        let axes: Vec<usize> = axes.iter().map(|ax| normalize_axis(*ax, self.ndim())).collect();
+
+        let mut ax_rolls: Vec<isize> = vec![0; self.ndim()];
+        for (roll, ax) in rolls.iter().zip(axes) {
+            ax_rolls[ax] = *roll;
+        }
+
+        let s = self;
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| roll_inner(s, &ax_rolls).into()
+        )
     }
 
     pub fn abs(&self) -> DynArray {

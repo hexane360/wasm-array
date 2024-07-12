@@ -5,6 +5,7 @@ extern crate alloc;
 
 use core::fmt;
 use std::collections::HashMap;
+use std::mem::uninitialized;
 use std::panic::{catch_unwind, UnwindSafe};
 use std::sync::OnceLock;
 
@@ -466,6 +467,7 @@ impl JsArray {
         ).map_err(|e| e.to_string())?)
     }
 
+    #[wasm_bindgen(js_name = toString)]
     /// Convert the array to a string representation. Useful for debugging.
     pub fn to_string(&self) -> String {
         let mut s = format!("Array {}\n{}", self.inner.dtype(), self.inner);
@@ -692,6 +694,29 @@ pub fn sqrt(arr: &JsArray) -> Result<JsArray, String> {
 }
 
 #[wasm_bindgen]
+/// Roll elements of the array by `shifts`, along axes `axes`.
+///
+/// If `axes` is specified, `shifts` and `axes` must be the same length.
+/// Otherwise, `shifts` must be the same length as the array's dimensionality.
+pub fn roll(arr: &JsArray, shifts: AxesLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    // TODO support single value shift arguments
+    catch_panic(|| {
+        let shifts: Box<[isize]> = serde_wasm_bindgen::from_value(shifts.obj).map_err(|e| e.to_string())?;
+
+        let axes: Box<[isize]> = match axes {
+            None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
+            Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
+        };
+
+        if shifts.len() != axes.len() {
+            return Err(format!("'shifts' must be the same length as 'axes' (or the array's ndim, if 'axes' is not specified)."))
+        }
+
+        Ok(arr.inner.roll(&shifts, &axes).into())
+    })
+}
+
+#[wasm_bindgen]
 /// Compute the Fourier transform of the input array
 /// 
 /// Computes the transformation along each of `axes` (defaults to all axes).
@@ -732,6 +757,36 @@ pub fn ifft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Res
 }
 
 #[wasm_bindgen]
+/// Shifts the zero-frequency component of a Fourier transformed array to the center
+/// 
+/// Shifts along each of `axes` (defaults to all axes).
+pub fn fftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes: Box<[isize]> = match axes {
+            None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
+            Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
+        };
+
+        Ok(fft::fftshift(&arr.inner, &axes).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Inverse of `fftshift`. Shifts the zero-frequency component of a Fourier transformed array to the corner
+/// 
+/// Shifts along each of `axes` (defaults to all axes).
+pub fn ifftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes: Box<[isize]> = match axes {
+            None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
+            Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
+        };
+
+        Ok(fft::ifftshift(&arr.inner, &axes).into())
+    })
+}
+
+#[wasm_bindgen]
 /// Compute the Fourier transform of the input array
 /// 
 /// Computes the transformation along the last two axes of the input.
@@ -760,6 +815,26 @@ pub fn ifft2(arr: &JsArray, norm: Option<FFTNorm>) -> Result<JsArray, String> {
         }).transpose()?;
 
         Ok(fft::ifft(&arr.inner, &[-2, -1], norm).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Shifts the zero-frequency component of a Fourier transformed array to the center
+/// 
+/// Computes the transformation along the last two axes of the input.
+pub fn fft2shift(arr: &JsArray) -> Result<JsArray, String> {
+    catch_panic(|| {
+        Ok(fft::fftshift(&arr.inner, &[-2, -1]).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Inverse of `fft2shift`. Shifts the zero-frequency component of a Fourier transformed array to the corner
+/// 
+/// Computes the transformation along the last two axes of the input.
+pub fn ifft2shift(arr: &JsArray) -> Result<JsArray, String> {
+    catch_panic(|| {
+        Ok(fft::ifftshift(&arr.inner, &[-2, -1]).into())
     })
 }
 
