@@ -537,8 +537,7 @@ pub fn zeros(shape: ShapeLike, dtype: &DataTypeLike) -> Result<JsArray, String> 
     catch_panic(|| {
         let shape: Box<[usize]> = shape.try_into()?;
         let dtype = dtype.try_into()?;
-        let arr = DynArray::ones(shape.as_ref(), dtype);
-        Ok(arr.into())
+        Ok(DynArray::zeros(shape.as_ref(), dtype).into())
     })
 }
 
