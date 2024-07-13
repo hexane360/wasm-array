@@ -47,3 +47,19 @@ fn test_roll_2d() {
         expected
     );
 }
+
+#[test]
+fn test_reshape() {
+    let arr: DynArray = arr1(&[1i16, 2, 3, 4, 5, 6]).into();
+
+    let expected: Result<DynArray, String> = Ok(arr2(&[
+        [1i16, 2, 3],
+        [4i16, 5, 6],
+    ]).into());
+    assert_eq!(&arr.reshape(&[2, 3]), &expected);
+    assert_eq!(&arr.reshape(&[-1, 3]), &expected);
+    assert_eq!(&arr.reshape(&[2, -1]), &expected);
+
+    assert_eq!(arr.reshape(&[-1, -1]), Err("Cannot use -1 on multiple dimensions in shape [-1, -1]".to_owned()));
+    assert_eq!(arr.reshape(&[1, 1]), Err("Cannot reshape array of size 6 into shape [1, 1]".to_owned()));
+}

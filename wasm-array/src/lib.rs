@@ -505,6 +505,29 @@ impl JsArray {
         })
     }
 
+    /// Reshape array into shape `shape`.
+    /// 
+    /// Up to one axis can be specified as '-1', allowing it to be inferred from the length of the array.
+    pub fn reshape(&self, shape: AxesLike) -> Result<JsArray, String> {
+        reshape(self, shape)
+    }
+
+    #[wasm_bindgen]
+    /// Return a contiguous, flattened array.
+    pub fn ravel(&self) -> Result<JsArray, String> {
+        catch_panic(|| {
+            Ok(self.inner.ravel().into())
+        })
+    }
+
+    #[wasm_bindgen]
+    /// Return a contiguous, flattened array.
+    pub fn flatten(&self) -> Result<JsArray, String> {
+        catch_panic(|| {
+            Ok(self.inner.ravel().into())
+        })
+    }
+
     #[wasm_bindgen(js_name = "__getTypeId")]
     pub fn __js_get_type_id(&self) -> String {
         "dbvjUb9K4VrV2Fq5".to_owned()
@@ -712,6 +735,26 @@ pub fn roll(arr: &JsArray, shifts: AxesLike, axes: Option<AxesLike>) -> Result<J
         }
 
         Ok(arr.inner.roll(&shifts, &axes).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Reshape array into shape `shape`.
+/// 
+/// Up to one axis can be specified as '-1', allowing it to be inferred from the length of the array.
+pub fn reshape(arr: &JsArray, shape: AxesLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let shape: Box<[isize]> = serde_wasm_bindgen::from_value(shape.obj).map_err(|e| e.to_string())?;
+
+        Ok(arr.inner.reshape(&shape)?.into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return a contiguous, flattened array.
+pub fn ravel(arr: &JsArray) -> Result<JsArray, String> {
+    catch_panic(|| {
+        Ok(arr.inner.ravel().into())
     })
 }
 

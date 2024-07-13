@@ -6,7 +6,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
 use itertools::Itertools;
-use num::{Float, Zero, One};
+use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
 use ndarray::{Array, Array1, Array2, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
 
@@ -228,6 +228,48 @@ impl DynArray {
             |s| {
                 Ok(s.broadcast(shape.into_shape().raw_dim().clone()).ok_or_else(|| ShapeError::from_kind(ErrorKind::IncompatibleShape))?.to_owned().into())
             }
+        )
+    }
+
+    pub fn reshape(&self, shape: &[isize]) -> Result<DynArray, String> {
+        let mut used_inferred = false;
+        let mut prod = 1usize;
+        let size: usize = self.shape.iter().product();
+
+        for &s in shape {
+            if s == -1 {
+                if used_inferred {
+                    return Err(format!("Cannot use -1 on multiple dimensions in shape {:?}", shape));
+                }
+                used_inferred = true;
+                continue;
+            } else if s < 0 {
+                return Err(format!("Invalid dimension '{}' in shape {:?}", s, shape));
+            }
+            prod = prod.checked_mul(s as usize).ok_or_else(|| format!("Overflow evaluating shape {:?}", shape))?;
+        }
+
+        let (div, rem) = size.div_rem(&prod);
+
+        if rem != 0 || prod != size && !used_inferred {
+            return Err(format!("Cannot reshape array of size {} into shape {:?}", size, shape));
+        }
+
+        let shape: Vec<usize> = shape.into_iter().map(|&v| if v < 0 { div } else { v as usize }).collect();
+
+        let s = self;
+        Ok(type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.view().into_shape(shape).unwrap().into_owned().into() }
+        ))
+    }
+
+    pub fn ravel(&self) -> DynArray {
+        let size = self.shape().iter().product();
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.view().into_shape(vec![size]).unwrap().as_standard_layout().to_owned().into() }
         )
     }
 }
