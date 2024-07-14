@@ -54,6 +54,8 @@ impl DynArray {
 
     pub fn ndim(&self) -> usize { self.shape.len() }
 
+    pub fn size(&self) -> usize { self.shape.iter().product() }
+
     pub fn from_val<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe>(val: T) -> Self {
         Self::from_typed(ArrayD::from_elem(IxDyn(&[]), val))
     }
@@ -234,7 +236,7 @@ impl DynArray {
     pub fn reshape(&self, shape: &[isize]) -> Result<DynArray, String> {
         let mut used_inferred = false;
         let mut prod = 1usize;
-        let size: usize = self.shape.iter().product();
+        let size: usize = self.size();
 
         for &s in shape {
             if s == -1 {
@@ -265,7 +267,7 @@ impl DynArray {
     }
 
     pub fn ravel(&self) -> DynArray {
-        let size = self.shape().iter().product();
+        let size = self.size();
         let s = self;
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
