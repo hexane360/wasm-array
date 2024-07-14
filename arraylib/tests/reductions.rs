@@ -29,7 +29,11 @@ fn test_reduce_nanmin() {
     let a2: DynArray = arr2(&[[20., f64::NAN, 100.],
                               [10., f64::NAN, 200.]]).into(); 
 
+    use arraylib::dtype::IsClose;
+    assert!(f64::NAN.is_close(f64::NAN, 1e-8, 0.));
+
     assert_eq!(nanmin(&a2, None), Ok(arr0(10f64).into()));
-    assert_eq!(nanmin(&a2, Some(&[0])), Err("Reduction along a zero-sized axis".to_owned()));
+    println!("{}", nanmin(&a2, Some(&[0])).unwrap());
+    assert!(nanmin(&a2, Some(&[0])).unwrap().allclose(&arr1(&[10., f64::NAN, 100.]).into(), 1e-8, 0.));
     assert_eq!(nanmin(&a2, Some(&[1])), Ok(arr1(&[20f64, 10.]).into()));
 }

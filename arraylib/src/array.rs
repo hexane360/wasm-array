@@ -11,7 +11,7 @@ use num_complex::{Complex, ComplexFloat};
 use ndarray::{Array, Array1, Array2, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
-use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, promote_types};
+use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, IsClose, promote_types};
 use crate::cast::Cast;
 use crate::error::ArrayError;
 use crate::colors::{magma, apply_cmap_u8};
@@ -701,6 +701,35 @@ impl DynArray {
             (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l != r)).into() }
         )
+    }
+
+    pub fn isclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> DynArray {
+        use num::FromPrimitive;
+
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l == r)).into() },
+            (f32, Complex<f32>),
+            |ref lhs, ref rhs| {
+                let rtol = f32::from_f64(rtol).unwrap();
+                let atol = f32::from_f64(atol).unwrap();
+
+                Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l.is_close(*r, rtol, atol))).into()
+            },
+            (f64, Complex<f64>),
+            |ref lhs, ref rhs| {
+                Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l.is_close(*r, rtol, atol))).into()
+            }
+        )
+    }
+
+    pub fn allclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> bool {
+        let arr = self.isclose(other, rtol, atol).downcast::<Bool>().unwrap();
+        arr.into_raw_vec().into_iter().all(|b| b.into())
     }
 
     pub fn pow<T: Borrow<DynArray>>(&self, other: T) -> DynArray {

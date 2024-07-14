@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 
+use num::{Zero, One};
 use ndarray::{Array, ArrayView, ArrayView1, Axis, IxDyn};
 
 use arraylib_macro::type_dispatch;
@@ -16,14 +17,14 @@ fn flatten_view<'a, T>(arr: ArrayView<'a, T, IxDyn>) -> ArrayView1<'a, T> {
     ArrayView1::from_shape((slice.len(),), slice).unwrap()
 }
 
-fn reduce_along_axes<'a, T: Copy, F: Fn(T, T) -> T + Copy>(arr: ArrayView<'a, T, IxDyn>, mut axes: Vec<usize>, f: F) -> Result<Array<T, IxDyn>, String> {
+fn reduce_along_axes<'a, T: Copy, F: Fn(T, T) -> T>(arr: ArrayView<'a, T, IxDyn>, mut axes: Vec<usize>, f: F) -> Result<Array<T, IxDyn>, String> {
     axes.sort_by_key(|v| usize::MAX - v);
 
     if axes.len() == 0 {
         return Ok(arr.to_owned())
     }
 
-    let closure = |ax: ArrayView1<'_, T>| ax.iter().copied().reduce(f).unwrap();
+    let closure = |ax: ArrayView1<'_, T>| ax.iter().copied().reduce(&f).unwrap();
 
     let inner_fn = |arr: ArrayView<'_, T, IxDyn>, ax: usize| -> Result<Array<T, IxDyn>, String> {
         if arr.shape()[ax] == 0 {
@@ -43,7 +44,26 @@ fn reduce_along_axes<'a, T: Copy, F: Fn(T, T) -> T + Copy>(arr: ArrayView<'a, T,
     Ok(axes_owned)
 }
 
-fn filter_reduce_along_axes<'a, T: Copy, P: Fn(T) -> bool + Copy, F: Fn(T, T) -> T + Copy>(arr: ArrayView<'a, T, IxDyn>, mut axes: Vec<usize>, f: F, pred: P) -> Result<Array<T, IxDyn>, String> {
+fn fold_along_axes<'a, T: Copy, F: Fn(T, T) -> T>(arr: ArrayView<'a, T, IxDyn>, mut axes: Vec<usize>, init: T, f: F) -> Array<T, IxDyn> {
+    axes.sort_by_key(|v| usize::MAX - v);
+
+    if axes.len() == 0 {
+        return arr.to_owned()
+    }
+
+    let closure = |ax: ArrayView1<'_, T>| ax.iter().copied().fold(init, &f);
+
+    let mut it = axes.iter();
+
+    let mut axes_owned = arr.map_axis(Axis(*it.next().unwrap()), &closure);
+    for &ax in it {
+        axes_owned = arr.map_axis(Axis(ax), &closure);
+    }
+    axes_owned
+}
+
+/*
+fn filter_reduce_along_axes<'a, T: Copy, P: Fn(T) -> bool + Copy, F: Fn(T, T) -> T>(arr: ArrayView<'a, T, IxDyn>, mut axes: Vec<usize>, f: F, pred: P) -> Result<Array<T, IxDyn>, String> {
     axes.sort_by_key(|v| usize::MAX - v);
 
     let inner_fn = |arr: ArrayView<'_, T, IxDyn>, ax: usize| -> Result<Array<T, IxDyn>, String> {
@@ -67,6 +87,7 @@ fn filter_reduce_along_axes<'a, T: Copy, P: Fn(T) -> bool + Copy, F: Fn(T, T) ->
     }
     Ok(axes_owned)
 }
+*/
 
 macro_rules! impl_reduction {
     ( $arr:expr, $axes:expr, $tys:ty, $fn:expr ) => { {
@@ -89,6 +110,28 @@ macro_rules! impl_reduction {
     } }
 }
 
+macro_rules! impl_fold {
+    ( $arr:expr, $axes:expr, $tys:ty, $init:expr, $fn:expr ) => { {
+        let arr = $arr;
+        match $axes {
+            None => {
+                type_dispatch!(
+                    $tys,
+                    |ref arr| { fold_along_axes(flatten_view(arr.view()).into_dyn(), vec![0], $init, $fn).into() }
+                )
+            },
+            Some(axes) => {
+                let axes: Vec<usize> = axes.iter().map(|&ax| normalize_axis(ax, arr.ndim())).collect();
+                type_dispatch!(
+                    $tys,
+                    |ref arr| { fold_along_axes(arr.view(), axes, $init, $fn).into() }
+                )
+            }
+        }
+    } }
+}
+
+/*
 macro_rules! impl_filter_reduction {
     ( $arr:expr, $axes:expr, $tys:ty, $fn:expr, $pred:expr ) => { {
         let arr = $arr;
@@ -109,41 +152,66 @@ macro_rules! impl_filter_reduction {
         }
     } }
 }
+*/
 
 pub fn min<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
     let arr = arr.borrow();
-    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64), |l, r| l.min(r))
+    if arr.dtype().category() < DataTypeCategory::Floating {
+        return nanmin(arr, axes);
+    }
+
+    // handle f32, f64 specially
+    impl_reduction!(arr, axes, (f32, f64), |l, r| l.minimum(r) )
 }
 
 pub fn max<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
     let arr = arr.borrow();
-    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64), |l, r| l.max(r))
+    if arr.dtype().category() < DataTypeCategory::Floating {
+        return nanmax(arr, axes);
+    }
+
+    // handle f32, f64 specially
+    impl_reduction!(arr, axes, (f32, f64), |l, r| l.maximum(r) )
 }
 
-pub fn sum<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
+pub fn sum<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
     let arr = arr.borrow();
-    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>), |l, r| l + r)
+    impl_fold!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>), Zero::zero(), |l, r| l + r)
 }
 
-pub fn prod<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
+pub fn prod<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
     let arr = arr.borrow();
-    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>), |l, r| l * r)
+    impl_fold!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>), One::one(), |l, r| l * r)
 }
 
 pub fn nanmin<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
     let arr = arr.borrow();
-    if arr.dtype().category() < DataTypeCategory::Floating {
-        return min(arr, axes);
-    }
 
-    impl_filter_reduction!(arr, axes, (f32, f64), |l, r| l.min(r), |v| !v.is_nan())
+    // .min() on Rust matches nanmin's behavior
+    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64), |l, r| l.min(r))
 }
 
 pub fn nanmax<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
     let arr = arr.borrow();
+
+    // .max() on Rust matches nanmax's behavior
+    impl_reduction!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64), |l, r| l.max(r))
+}
+
+pub fn nansum<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
+    let arr = arr.borrow();
     if arr.dtype().category() < DataTypeCategory::Floating {
-        return max(arr, axes);
+        return sum(arr, axes);
     }
 
-    impl_filter_reduction!(arr, axes, (f32, f64), |l, r| l.max(r), |v| !v.is_nan())
+    impl_fold!(arr, axes, (f32, f64, Complex<f32>, Complex<f64>), Zero::zero(), |l, r| if r.is_nan() { l } else { l + r })
+}
+
+pub fn nanprod<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
+    let arr = arr.borrow();
+    if arr.dtype().category() < DataTypeCategory::Floating {
+        return prod(arr, axes);
+    }
+
+    impl_fold!(arr, axes, (f32, f64, Complex<f32>, Complex<f64>), One::one(), |l, r| if r.is_nan() { l } else { l * r })
 }

@@ -395,3 +395,37 @@ impl DataType {
         }
     }
 }
+
+pub trait IsClose<InnerT> where InnerT: num::Float {
+    fn is_close(&self, other: Self, rtol: InnerT, atol: InnerT) -> bool;
+}
+
+impl IsClose<f32> for f32 {
+    fn is_close(&self, other: Self, rtol: f32, atol: f32) -> bool {
+        let diff = (self - other).abs();
+        diff <= rtol * self.abs() || diff <= rtol * other.abs() || diff <= atol
+            || self.is_nan() && other.is_nan()
+            || self.is_infinite() && !other.is_infinite() && self.signum() == other.signum()   
+    }
+}
+
+impl IsClose<f64> for f64 {
+    fn is_close(&self, other: Self, rtol: f64, atol: f64) -> bool {
+        let diff = (self - other).abs();
+        diff <= rtol * self.abs() || diff <= rtol * other.abs() || diff <= atol
+            || self.is_nan() && other.is_nan()
+            || self.is_infinite() && !other.is_infinite() && self.signum() == other.signum()   
+    }
+}
+
+impl IsClose<f32> for Complex<f32> {
+    fn is_close(&self, other: Self, rtol: f32, atol: f32) -> bool {
+        self.re.is_close(other.re, rtol, atol) && self.im.is_close(other.im, rtol, atol)
+    }
+}
+
+impl IsClose<f64> for Complex<f64> {
+    fn is_close(&self, other: Self, rtol: f64, atol: f64) -> bool {
+        self.re.is_close(other.re, rtol, atol) && self.im.is_close(other.im, rtol, atol)
+    }
+}
