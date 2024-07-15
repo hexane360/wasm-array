@@ -1,7 +1,7 @@
 use ndarray::{arr0, arr1, arr2};
 
 use arraylib::array::DynArray;
-use arraylib::reductions::{min, nanmin};
+use arraylib::reductions::{min, nanmin, nanmean};
 
 #[test]
 fn test_reduce_min() {
@@ -33,7 +33,14 @@ fn test_reduce_nanmin() {
     assert!(f64::NAN.is_close(f64::NAN, 1e-8, 0.));
 
     assert_eq!(nanmin(&a2, None), Ok(arr0(10f64).into()));
-    println!("{}", nanmin(&a2, Some(&[0])).unwrap());
     assert!(nanmin(&a2, Some(&[0])).unwrap().allclose(&arr1(&[10., f64::NAN, 100.]).into(), 1e-8, 0.));
     assert_eq!(nanmin(&a2, Some(&[1])), Ok(arr1(&[20f64, 10.]).into()));
+}
+
+#[test]
+fn test_nanmean() {
+    let arr: DynArray = arr1(&[10f64, 20., 30., 40., 50., 60.]).into();
+
+    println!("{}", nanmean(&arr, None));
+    assert!(nanmean(&arr, None).allclose(&arr0(35f64).into(), 1e-8, 0.));
 }

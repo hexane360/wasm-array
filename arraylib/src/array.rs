@@ -727,6 +727,14 @@ impl DynArray {
         )
     }
 
+    pub fn is_normal(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| s.map(|v| Bool::from(v.is_normal())).into()
+        )
+    }
+
     pub fn allclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> bool {
         let arr = self.isclose(other, rtol, atol).downcast::<Bool>().unwrap();
         arr.into_raw_vec().into_iter().all(|b| b.into())

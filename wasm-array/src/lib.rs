@@ -5,7 +5,6 @@ extern crate alloc;
 
 use core::fmt;
 use std::collections::HashMap;
-use std::mem::uninitialized;
 use std::panic::{catch_unwind, UnwindSafe};
 use std::sync::OnceLock;
 
@@ -23,8 +22,8 @@ use expr::{parse_with_literals, Token, ArrayFunc, UnaryFunc, FuncMap};
 use arraylib::array::DynArray;
 use arraylib::dtype::DataType;
 use arraylib::error::ArrayError;
-use arraylib::fft;
 use arraylib::colors::named_colors;
+use arraylib::{fft, reductions};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TYPESCRIPT_PRELUDE: &'static str = r##"
@@ -755,6 +754,146 @@ pub fn reshape(arr: &JsArray, shape: AxesLike) -> Result<JsArray, String> {
 pub fn ravel(arr: &JsArray) -> Result<JsArray, String> {
     catch_panic(|| {
         Ok(arr.inner.ravel().into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the minimum element along the given axes.
+//
+// NaN values are propagated. See `nanmin` for a version that ignores missing values.
+pub fn min(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        reductions::min(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the maximum element along the given axes.
+//
+// NaN values are propagated. See `nanmax` for a version that ignores missing values.
+pub fn max(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        reductions::max(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the sum of elements along the given axes.
+//
+// NaN values are propagated. See `nansum` for a version that ignores missing values.
+pub fn sum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::sum(&arr.inner, axes.as_deref()).into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the product of elements along the given axes.
+//
+// NaN values are propagated. See `nanprod` for a version that ignores missing values.
+pub fn prod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::prod(&arr.inner, axes.as_deref()).into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the mean element along the given axes.
+//
+// NaN values are propagated. See `nanmean` for a version that ignores missing values.
+pub fn mean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::mean(&arr.inner, axes.as_deref()).into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the minimum element along the given axes.
+//
+// NaN values are ignored.
+pub fn nanmin(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        reductions::nanmin(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the maximum element along the given axes.
+//
+// NaN values are ignored.
+pub fn nanmax(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        reductions::nanmax(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the sum of elements along the given axes.
+//
+// NaN values are ignored.
+pub fn nansum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::nansum(&arr.inner, axes.as_deref()).into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the product of elements along the given axes.
+//
+// NaN values are ignored.
+pub fn nanprod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::nanprod(&arr.inner, axes.as_deref()).into())
+    })
+}
+
+#[wasm_bindgen]
+// Return the mean element along the given axes.
+//
+// NaN values are ignored.
+pub fn nanmean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let axes = axes.map(|val| {
+            serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
+        }).transpose()?;
+
+        Ok(reductions::nanmean(&arr.inner, axes.as_deref()).into())
     })
 }
 

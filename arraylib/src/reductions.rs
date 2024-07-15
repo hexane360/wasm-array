@@ -4,7 +4,7 @@ use num::{Zero, One};
 use ndarray::{Array, ArrayView, ArrayView1, Axis, IxDyn};
 
 use arraylib_macro::type_dispatch;
-use crate::dtype::{Complex, DataTypeCategory, PhysicalType};
+use crate::dtype::{Complex, DataType, DataTypeCategory, PhysicalType};
 use crate::array::DynArray;
 use crate::util::normalize_axis;
 
@@ -184,6 +184,23 @@ pub fn prod<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
     impl_fold!(arr, axes, (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>), One::one(), |l, r| l * r)
 }
 
+pub fn mean<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
+    let arr = arr.borrow();
+    if arr.dtype().category() < DataTypeCategory::Floating {
+        return mean(&arr.cast(DataType::Float64).into_owned(), axes);
+    }
+
+    let size: usize = match axes {
+        None => arr.size(),
+        Some(axes) => axes.iter().map(|&ax| normalize_axis(ax, arr.ndim())).map(|ax| arr.shape()[ax]).product(),
+    };
+
+    match arr.dtype() {
+        DataType::Float32 | DataType::Complex64 => nansum(arr, axes) / DynArray::from_val(size as f32),
+        _ => nansum(arr, axes) / DynArray::from_val(size as f64),
+    }
+}
+
 pub fn nanmin<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<DynArray, String> {
     let arr = arr.borrow();
 
@@ -200,6 +217,9 @@ pub fn nanmax<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> Result<Dyn
 
 pub fn nansum<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
     let arr = arr.borrow();
+    if arr.dtype() == DataType::Boolean {
+        return sum(arr.cast(DataType::Int64), axes);
+    }
     if arr.dtype().category() < DataTypeCategory::Floating {
         return sum(arr, axes);
     }
@@ -214,4 +234,13 @@ pub fn nanprod<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray 
     }
 
     impl_fold!(arr, axes, (f32, f64, Complex<f32>, Complex<f64>), One::one(), |l, r| if r.is_nan() { l } else { l * r })
+}
+
+pub fn nanmean<A: Borrow<DynArray>>(arr: A, axes: Option<&[isize]>) -> DynArray {
+    let arr = arr.borrow();
+    if arr.dtype().category() < DataTypeCategory::Floating {
+        return mean(&arr.cast(DataType::Float64).into_owned(), axes);
+    }
+
+    nansum(arr, axes) / nansum(arr.is_normal(), axes)
 }
