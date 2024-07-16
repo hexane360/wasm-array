@@ -13,8 +13,7 @@ use arraylib::colors::named_colors;
 
 use super::{
     IArrayInterchange, ColorLike, DataTypeLike,
-    ShapeLike, ArrayLike,
-    JsDataType, JsArray,
+    ShapeLike, JsDataType, JsArray,
 };
 
 /*
@@ -282,8 +281,8 @@ fn to_typestr(datatype: &DataType) -> &'static str {
     }
 }
 
-pub fn parse_arraylike<'a>(arr: &'a ArrayLike, dtype: Option<DataType>) -> Result<Cow<'a, DynArray>, String> {
-    if let Some(val) = JsArray::downcast_ref(&arr.obj) {
+pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<Cow<'a, DynArray>, String> {
+    if let Some(val) = JsArray::downcast_ref(&arr) {
         // SAFETY: `arr` is a JsArray borrowed for 'a, ensuring the underlying
         // array won't be dropped or mutated for at least that region
         let array_ref: &'a DynArray = unsafe { mem::transmute(&val.inner) };
@@ -299,7 +298,7 @@ pub fn parse_arraylike<'a>(arr: &'a ArrayLike, dtype: Option<DataType>) -> Resul
         return Ok(Cow::Owned(arr));
     }
 
-    Err(format!("Array conversion not implemented for type '{}'", arr.obj.js_typeof().as_string().unwrap()))
+    Err(format!("Array conversion not implemented for type '{}'", arr.js_typeof().as_string().unwrap()))
 }
 
 fn parse_nestedlist(val: &JsValue) -> Result<NestedList, String> {

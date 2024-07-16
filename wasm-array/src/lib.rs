@@ -22,7 +22,7 @@ use arraylib::{fft, reductions};
 pub mod expr;
 pub mod types;
 
-use expr::{parse_with_literals, Token, ArrayFunc, UnaryFunc, FuncMap};
+use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc};
 use types::{ArrayInterchange, parse_arraylike};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -70,7 +70,7 @@ type DataTypeLike = DataType | "bool" | `uint${IntWidth}` | `int${IntWidth}` | `
 type NestedArray<T> = T | ReadonlyArray<NestedArray<T>>;
 
 /**
- * Array-like. Can be a number, `BigInt`, typed array, or nested array.
+ * Array-like. Can be a number, `BigInt`, boolean, typed array, or nested array.
  */
 type ArrayLike = NArray | NestedArray<number | BigInt | boolean> | ArrayBufferView;
 
@@ -87,7 +87,7 @@ type FFTNorm = "backward" | "ortho" | "forward";
  *   let result = expr`sqrt(${arr1}^2 + ${arr2}^2)`;
  * ```
  */
-export function expr(strs: ReadonlyArray<string>, ...lits: ReadonlyArray<NArray>): NArray;
+export function expr(strs: ReadonlyArray<string>, ...lits: ReadonlyArray<ArrayLike>): NArray;
 
 /**
  * Return arrays representing the indices of a grid.
@@ -284,7 +284,11 @@ impl JsArray {
     /// 
     /// Up to one axis can be specified as '-1', allowing it to be inferred from the length of the array.
     pub fn reshape(&self, shape: AxesLike) -> Result<JsArray, String> {
-        reshape(self, shape)
+        catch_panic(|| {
+            let shape: Box<[isize]> = serde_wasm_bindgen::from_value(shape.obj).map_err(|e| e.to_string())?;
+
+            Ok(self.inner.reshape(&shape)?.into())
+        })
     }
 
     #[wasm_bindgen]
@@ -464,32 +468,47 @@ pub fn eye(ndim: f64, dtype: &DataTypeLike) -> Result<JsArray, String> {
 
 #[wasm_bindgen]
 /// Return the ceiling of the input, element-wise
-pub fn ceil(arr: &JsArray) -> Result<JsArray, String> {
-    catch_panic(|| { Ok(arr.inner.ceil().into()) })
+pub fn ceil(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().ceil().into())
+    })
 }
 
 #[wasm_bindgen]
 /// Return the floor of the input, element-wise
-pub fn floor(arr: &JsArray) -> Result<JsArray, String> {
-    catch_panic(|| { Ok(arr.inner.ceil().into()) })
+pub fn floor(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().ceil().into())
+    })
 }
 
 #[wasm_bindgen]
 /// Return the absolute value of the input, element-wise
-pub fn abs(arr: &JsArray) -> Result<JsArray, String> {
-    catch_panic(|| { Ok(arr.inner.abs().into()) })
+pub fn abs(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().abs().into())
+    })
 }
 
 #[wasm_bindgen]
 /// Return the complex conjugate of the input, element-wise
-pub fn conj(arr: &JsArray) -> Result<JsArray, String> {
-    catch_panic(|| { Ok(arr.inner.conj().into()) })
+pub fn conj(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?; 
+        Ok(arr.as_ref().conj().into())
+    })
 }
 
 #[wasm_bindgen]
 /// Return the square root of the input, element-wise
-pub fn sqrt(arr: &JsArray) -> Result<JsArray, String> {
-    catch_panic(|| { Ok(arr.inner.sqrt().into()) })
+pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().sqrt().into())
+    })
 }
 
 #[wasm_bindgen]
@@ -497,9 +516,10 @@ pub fn sqrt(arr: &JsArray) -> Result<JsArray, String> {
 ///
 /// If `axes` is specified, `shifts` and `axes` must be the same length.
 /// Otherwise, `shifts` must be the same length as the array's dimensionality.
-pub fn roll(arr: &JsArray, shifts: AxesLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn roll(arr: &ArrayLike, shifts: AxesLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     // TODO support single value shift arguments
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let shifts: Box<[isize]> = serde_wasm_bindgen::from_value(shifts.obj).map_err(|e| e.to_string())?;
 
         let axes: Box<[isize]> = match axes {
@@ -511,7 +531,7 @@ pub fn roll(arr: &JsArray, shifts: AxesLike, axes: Option<AxesLike>) -> Result<J
             return Err(format!("'shifts' must be the same length as 'axes' (or the array's ndim, if 'axes' is not specified)."))
         }
 
-        Ok(arr.inner.roll(&shifts, &axes).into())
+        Ok(arr.as_ref().roll(&shifts, &axes).into())
     })
 }
 
@@ -519,19 +539,21 @@ pub fn roll(arr: &JsArray, shifts: AxesLike, axes: Option<AxesLike>) -> Result<J
 /// Reshape array into shape `shape`.
 /// 
 /// Up to one axis can be specified as '-1', allowing it to be inferred from the length of the array.
-pub fn reshape(arr: &JsArray, shape: AxesLike) -> Result<JsArray, String> {
+pub fn reshape(arr: &ArrayLike, shape: AxesLike) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let shape: Box<[isize]> = serde_wasm_bindgen::from_value(shape.obj).map_err(|e| e.to_string())?;
 
-        Ok(arr.inner.reshape(&shape)?.into())
+        Ok(arr.as_ref().reshape(&shape)?.into())
     })
 }
 
 #[wasm_bindgen]
 /// Return a contiguous, flattened array.
-pub fn ravel(arr: &JsArray) -> Result<JsArray, String> {
+pub fn ravel(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
-        Ok(arr.inner.ravel().into())
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().ravel().into())
     })
 }
 
@@ -539,13 +561,14 @@ pub fn ravel(arr: &JsArray) -> Result<JsArray, String> {
 // Return the minimum element along the given axes.
 //
 // NaN values are propagated. See `nanmin` for a version that ignores missing values.
-pub fn min(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn min(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        reductions::min(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+        reductions::min(arr.as_ref(), axes.as_deref()).map(|arr| arr.into())
     })
 }
 
@@ -553,13 +576,14 @@ pub fn min(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
 // Return the maximum element along the given axes.
 //
 // NaN values are propagated. See `nanmax` for a version that ignores missing values.
-pub fn max(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn max(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        reductions::max(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+        reductions::max(arr.as_ref(), axes.as_deref()).map(|arr| arr.into())
     })
 }
 
@@ -567,13 +591,14 @@ pub fn max(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
 // Return the sum of elements along the given axes.
 //
 // NaN values are propagated. See `nansum` for a version that ignores missing values.
-pub fn sum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn sum(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::sum(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::sum(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -581,13 +606,14 @@ pub fn sum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
 // Return the product of elements along the given axes.
 //
 // NaN values are propagated. See `nanprod` for a version that ignores missing values.
-pub fn prod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn prod(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::prod(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::prod(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -595,13 +621,14 @@ pub fn prod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
 // Return the mean element along the given axes.
 //
 // NaN values are propagated. See `nanmean` for a version that ignores missing values.
-pub fn mean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn mean(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::mean(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::mean(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -609,13 +636,14 @@ pub fn mean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
 // Return the minimum element along the given axes.
 //
 // NaN values are ignored.
-pub fn nanmin(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn nanmin(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        reductions::nanmin(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+        reductions::nanmin(arr.as_ref(), axes.as_deref()).map(|arr| arr.into())
     })
 }
 
@@ -623,13 +651,14 @@ pub fn nanmin(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> 
 // Return the maximum element along the given axes.
 //
 // NaN values are ignored.
-pub fn nanmax(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn nanmax(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        reductions::nanmax(&arr.inner, axes.as_deref()).map(|arr| arr.into())
+        reductions::nanmax(arr.as_ref(), axes.as_deref()).map(|arr| arr.into())
     })
 }
 
@@ -637,13 +666,14 @@ pub fn nanmax(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> 
 // Return the sum of elements along the given axes.
 //
 // NaN values are ignored.
-pub fn nansum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn nansum(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::nansum(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::nansum(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -651,13 +681,14 @@ pub fn nansum(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> 
 // Return the product of elements along the given axes.
 //
 // NaN values are ignored.
-pub fn nanprod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn nanprod(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::nanprod(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::nanprod(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -665,13 +696,14 @@ pub fn nanprod(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String>
 // Return the mean element along the given axes.
 //
 // NaN values are ignored.
-pub fn nanmean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn nanmean(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes = axes.map(|val| {
             serde_wasm_bindgen::from_value::<Box<[isize]>>(val.obj).map_err(|e| e.to_string())
         }).transpose()?;
 
-        Ok(reductions::nanmean(&arr.inner, axes.as_deref()).into())
+        Ok(reductions::nanmean(arr.as_ref(), axes.as_deref()).into())
     })
 }
 
@@ -680,8 +712,9 @@ pub fn nanmean(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String>
 /// 
 /// Computes the transformation along each of `axes` (defaults to all axes).
 /// Uses the normalization `norm`, which can be `'backward'` (default), `'forward'`, or `'ortho'`.
-pub fn fft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+pub fn fft(arr: &ArrayLike, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes: Box<[isize]> = match axes {
             None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
             Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
@@ -691,7 +724,7 @@ pub fn fft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Resu
             None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
         }).transpose()?;
 
-        Ok(fft::fft(&arr.inner, &axes, norm).into())
+        Ok(fft::fft(arr.as_ref(), &axes, norm).into())
     })
 }
 
@@ -700,8 +733,9 @@ pub fn fft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Resu
 /// 
 /// Computes the transformation along each of `axes` (defaults to all axes).
 /// Uses the normalization `norm`, which can be `'backward'` (default), `'forward'`, or `'ortho'`.
-pub fn ifft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+pub fn ifft(arr: &ArrayLike, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes: Box<[isize]> = match axes {
             None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
             Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
@@ -711,7 +745,7 @@ pub fn ifft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Res
             None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
         }).transpose()?;
 
-        Ok(fft::ifft(&arr.inner, &axes, norm).into())
+        Ok(fft::ifft(arr.as_ref(), &axes, norm).into())
     })
 }
 
@@ -719,14 +753,15 @@ pub fn ifft(arr: &JsArray, axes: Option<AxesLike>, norm: Option<FFTNorm>) -> Res
 /// Shifts the zero-frequency component of a Fourier transformed array to the center
 /// 
 /// Shifts along each of `axes` (defaults to all axes).
-pub fn fftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn fftshift(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes: Box<[isize]> = match axes {
             None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
             Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
         };
 
-        Ok(fft::fftshift(&arr.inner, &axes).into())
+        Ok(fft::fftshift(arr.as_ref(), &axes).into())
     })
 }
 
@@ -734,14 +769,15 @@ pub fn fftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String
 /// Inverse of `fftshift`. Shifts the zero-frequency component of a Fourier transformed array to the corner
 /// 
 /// Shifts along each of `axes` (defaults to all axes).
-pub fn ifftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, String> {
+pub fn ifftshift(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let axes: Box<[isize]> = match axes {
             None => (0..arr.shape().len()).into_iter().map(|v| v as isize).collect(),
             Some(val) => serde_wasm_bindgen::from_value(val.obj).map_err(|e| e.to_string())?,
         };
 
-        Ok(fft::ifftshift(&arr.inner, &axes).into())
+        Ok(fft::ifftshift(arr.as_ref(), &axes).into())
     })
 }
 
@@ -750,14 +786,15 @@ pub fn ifftshift(arr: &JsArray, axes: Option<AxesLike>) -> Result<JsArray, Strin
 /// 
 /// Computes the transformation along the last two axes of the input.
 /// Uses the normalization `norm`, which can be `'backward'` (default), `'forward'`, or `'ortho'`.
-pub fn fft2(arr: &JsArray, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+pub fn fft2(arr: &ArrayLike, norm: Option<FFTNorm>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let norm = norm.map(|norm| match norm.obj.as_string() {
             Some(s) => fft::FFTNorm::try_from(s.as_ref()),
             None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
         }).transpose()?;
 
-        Ok(fft::fft(&arr.inner, &[-2, -1], norm).into())
+        Ok(fft::fft(arr.as_ref(), &[-2, -1], norm).into())
     })
 }
 
@@ -766,14 +803,15 @@ pub fn fft2(arr: &JsArray, norm: Option<FFTNorm>) -> Result<JsArray, String> {
 /// 
 /// Computes the transformation along the last two axes of the input.
 /// Uses the normalization `norm`, which can be `'backward'` (default), `'forward'`, or `'ortho'`.
-pub fn ifft2(arr: &JsArray, norm: Option<FFTNorm>) -> Result<JsArray, String> {
+pub fn ifft2(arr: &ArrayLike, norm: Option<FFTNorm>) -> Result<JsArray, String> {
     catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
         let norm = norm.map(|norm| match norm.obj.as_string() {
             Some(s) => fft::FFTNorm::try_from(s.as_ref()),
             None => Err(format!("Expected a string 'backward', 'forward', or 'ortho', got type {} instead", norm.obj.js_typeof().as_string().unwrap())),
         }).transpose()?;
 
-        Ok(fft::ifft(&arr.inner, &[-2, -1], norm).into())
+        Ok(fft::ifft(arr.as_ref(), &[-2, -1], norm).into())
     })
 }
 
@@ -781,9 +819,10 @@ pub fn ifft2(arr: &JsArray, norm: Option<FFTNorm>) -> Result<JsArray, String> {
 /// Shifts the zero-frequency component of a Fourier transformed array to the center
 /// 
 /// Computes the transformation along the last two axes of the input.
-pub fn fft2shift(arr: &JsArray) -> Result<JsArray, String> {
+pub fn fft2shift(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
-        Ok(fft::fftshift(&arr.inner, &[-2, -1]).into())
+        let arr = parse_arraylike(arr, None)?;
+        Ok(fft::fftshift(arr.as_ref(), &[-2, -1]).into())
     })
 }
 
@@ -791,20 +830,29 @@ pub fn fft2shift(arr: &JsArray) -> Result<JsArray, String> {
 /// Inverse of `fft2shift`. Shifts the zero-frequency component of a Fourier transformed array to the corner
 /// 
 /// Computes the transformation along the last two axes of the input.
-pub fn ifft2shift(arr: &JsArray) -> Result<JsArray, String> {
+pub fn ifft2shift(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
-        Ok(fft::ifftshift(&arr.inner, &[-2, -1]).into())
+        let arr = parse_arraylike(arr, None)?;
+        Ok(fft::ifftshift(arr.as_ref(), &[-2, -1]).into())
     })
 }
 
 #[wasm_bindgen]
-pub fn allequal(arr1: &JsArray, arr2: &JsArray) -> Result<bool, String> {
-    Ok(arr1.inner.allequal(&arr2.inner))
+pub fn allequal(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<bool, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().allequal(arr2.as_ref()))
+    })
 }
 
 #[wasm_bindgen]
-pub fn allclose(arr1: &JsArray, arr2: &JsArray, rtol: Option<f64>, atol: Option<f64>) -> Result<bool, String> {
-    Ok(arr1.inner.allclose(&arr2.inner, rtol.unwrap_or(1e-8), atol.unwrap_or(0.0)))
+pub fn allclose(arr1: &ArrayLike, arr2: &ArrayLike, rtol: Option<f64>, atol: Option<f64>) -> Result<bool, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().allclose(arr2.as_ref(), rtol.unwrap_or(1e-8), atol.unwrap_or(0.0)))
+    })
 }
 
 #[wasm_bindgen]
@@ -828,11 +876,14 @@ fn init_array_funcs() -> FuncMap {
 }
 
 #[wasm_bindgen(variadic, skip_typescript)]
-pub fn expr(strs: Vec<String>, lits: Vec<JsArray>) -> Result<JsArray, String> {
+pub fn expr(strs: Vec<String>, lits: &JsValue) -> Result<JsArray, String> {
     catch_panic(|| {
+        let lits = lits.clone().dyn_into::<js_sys::Array>().map_err(|_| "'lits' must be an array".to_owned())?;
+        let lits: Vec<_> = lits.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
+
         let funcs = ARRAY_FUNCS.get_or_init(init_array_funcs);
         //return Err(format!("strs: {:?} lits: {:?}", strs, lits.into_iter().map(|a| a.inner).collect_vec()));
-        let expr = parse_with_literals(strs.iter().map(|s| s.as_ref()), lits.into_iter().map(|v| Token::ArrayLit(v.inner)))
+        let expr = parse_with_literals(strs.iter().map(|s| s.as_ref()), lits.into_iter().map(Token::ArrayLit))
             .map_err(|e| format!("{:?}", e))?;
         let vars = HashMap::new();
         match expr.exec(&vars, funcs) {
