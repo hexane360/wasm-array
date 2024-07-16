@@ -11,4 +11,5 @@ pub mod array;
 pub mod fft;
 pub mod reductions;
 pub mod colors;
+pub mod arraylike;
 pub(crate) mod util;

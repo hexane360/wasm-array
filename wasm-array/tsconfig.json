@@ -1,7 +1,14 @@
 {
     "compilerOptions": {
+        "target": "ES2021",
         "esModuleInterop": true,
+        "emitDeclarationOnly": false,
+        "noEmit": true,
         "module": "ESNext",
         "moduleResolution": "Bundler",
-    }
+    },
+    "include": [
+        "tests/**/*",
+        "jest-custom-matchers.ts"
+    ]
 }

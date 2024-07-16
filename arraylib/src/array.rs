@@ -735,6 +735,31 @@ impl DynArray {
         )
     }
 
+    pub fn all<T: Borrow<DynArray>>(&self) -> bool {
+        let arr = self.cast(DataType::Boolean);
+        let arr_ref = arr.downcast_ref::<Bool>().unwrap();
+        if let Some(slice) = arr_ref.as_slice_memory_order() {
+            slice.iter().all(|v| (*v).into())
+        } else {
+            arr_ref.iter().all(|v| (*v).into())
+        }
+    }
+
+    pub fn any<T: Borrow<DynArray>>(&self) -> bool {
+        let arr = self.cast(DataType::Boolean);
+        let arr_ref = arr.downcast_ref::<Bool>().unwrap();
+        if let Some(slice) = arr_ref.as_slice_memory_order() {
+            slice.iter().any(|v| (*v).into())
+        } else {
+            arr_ref.iter().any(|v| (*v).into())
+        }
+    }
+
+    pub fn allequal<T: Borrow<DynArray>>(&self, other: T) -> bool {
+        let arr = self.equals(other).downcast::<Bool>().unwrap();
+        arr.into_raw_vec().into_iter().all(|b| b.into())
+    }
+
     pub fn allclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> bool {
         let arr = self.isclose(other, rtol, atol).downcast::<Bool>().unwrap();
         arr.into_raw_vec().into_iter().all(|b| b.into())
