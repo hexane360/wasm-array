@@ -6,7 +6,7 @@
         "email": "hexane@mit.edu"
     },
     "scripts": {
-        "build": "wasm-pack build --target webpack",
+        "build": "wasm-pack build --target bundler --release",
         "pretest": "wasm-pack build --target nodejs --dev",
         "test": "jest"
     },

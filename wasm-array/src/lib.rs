@@ -22,7 +22,7 @@ use arraylib::{fft, reductions};
 pub mod expr;
 pub mod types;
 
-use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc};
+use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc, BinaryFunc};
 use types::{ArrayInterchange, parse_arraylike};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -558,6 +558,54 @@ pub fn ravel(arr: &ArrayLike) -> Result<JsArray, String> {
 }
 
 #[wasm_bindgen]
+/// Return the smallest element between the two arrays, elementwise.
+/// 
+/// Propagates NaNs, preferring the first value if both are NaN.
+pub fn minimum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().minimum(arr2.as_ref()).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the largest element between the two arrays, elementwise.
+/// 
+/// Propagates NaNs, preferring the first value if both are NaN.
+pub fn maximum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().maximum(arr2.as_ref()).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the smallest element between the two arrays, elementwise.
+/// 
+/// Ignores NaNs. If both values are NaN, returns the first one.
+pub fn nanminimum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().nanminimum(arr2.as_ref()).into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the largest element between the two arrays, elementwise.
+///
+/// Ignores NaNs. If both values are NaN, returns the first one.
+pub fn nanmaximum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr1 = parse_arraylike(arr1, None)?;
+        let arr2 = parse_arraylike(arr2, None)?;
+        Ok(arr1.as_ref().nanmaximum(arr2.as_ref()).into())
+    })
+}
+
+#[wasm_bindgen]
 // Return the minimum element along the given axes.
 //
 // NaN values are propagated. See `nanmin` for a version that ignores missing values.
@@ -870,6 +918,10 @@ fn init_array_funcs() -> FuncMap {
         Box::new(UnaryFunc::new("abs", |v| v.abs())),
         Box::new(UnaryFunc::new("exp", |v| v.exp())),
         Box::new(UnaryFunc::new("sqrt", |v| v.sqrt())),
+        Box::new(BinaryFunc::new("minimum", |l, r| l.minimum(r))),
+        Box::new(BinaryFunc::new("maximum", |l, r| l.maximum(r))),
+        Box::new(BinaryFunc::new("nanminimum", |l, r| l.nanminimum(r))),
+        Box::new(BinaryFunc::new("nanmaximum", |l, r| l.nanmaximum(r))),
     ];
 
     funcs.into_iter().map(|f| (f.name(), f)).collect()

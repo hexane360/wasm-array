@@ -60,3 +60,51 @@ fn test_from_buf() {
 
     assert_eq!(expected, a);
 }
+
+#[test]
+fn test_maximum() {
+    let a1: DynArray = arr1(&[10u64, 20, 30]).into();
+    let a2: DynArray = arr1(&[50u64, 0, 40]).into();
+    let expected: DynArray = arr1(&[50u64, 20, 40]).into();
+
+    assert!(expected.allclose(a1.maximum(a2), 1e-8, 0.0));
+
+    let a1: DynArray = arr1(&[10.0, f32::NAN, f32::NAN,    100.0]).into();
+    let a2: DynArray = arr1(&[50.0,      0.0, f32::NAN, f32::NAN]).into();
+    let expected: DynArray = arr1(&[50.0, f32::NAN, f32::NAN, f32::NAN]).into();
+
+    assert!(expected.allclose(a1.maximum(a2), 1e-8, 0.0));
+}
+
+#[test]
+fn test_minimum() {
+    let a1: DynArray = arr1(&[10u64, 20, 30]).into();
+    let a2: DynArray = arr1(&[50u64, 0, 40]).into();
+    let expected: DynArray = arr1(&[10u64, 0, 30]).into();
+
+    assert!(expected.allclose(a1.minimum(a2), 1e-8, 0.0));
+
+    let a1: DynArray = arr1(&[10.0, f32::NAN, f32::NAN,    100.0]).into();
+    let a2: DynArray = arr1(&[50.0,      0.0, f32::NAN, f32::NAN]).into();
+    let expected: DynArray = arr1(&[10.0, f32::NAN, f32::NAN, f32::NAN]).into();
+
+    assert!(expected.allclose(a1.minimum(a2), 1e-8, 0.0));
+}
+
+#[test]
+fn test_nanmaximum() {
+    let a1: DynArray = arr1(&[10.0, f32::NAN, f32::NAN,    100.0]).into();
+    let a2: DynArray = arr1(&[50.0,      0.0, f32::NAN, f32::NAN]).into();
+    let expected: DynArray = arr1(&[50.0, 0.0, f32::NAN, 100.0]).into();
+
+    assert!(expected.allclose(a1.nanmaximum(a2), 1e-8, 0.0));
+}
+
+#[test]
+fn test_nanminimum() {
+    let a1: DynArray = arr1(&[10.0, f32::NAN, f32::NAN,    100.0]).into();
+    let a2: DynArray = arr1(&[50.0,     00.0, f32::NAN, f32::NAN]).into();
+    let expected: DynArray = arr1(&[10.0, 0.0, f32::NAN, 100.0]).into();
+
+    assert!(expected.allclose(a1.nanminimum(a2), 1e-8, 0.0));
+}

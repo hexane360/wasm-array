@@ -858,6 +858,113 @@ impl DynArray {
         )
     }
 
+    pub fn minimum<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l <= r { l } else { r }
+            ).into() },
+            (f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    if l.is_nan() { l } else { r }
+                } else if l <= r { l } else { r }
+            ).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    if l.is_nan() { l } else { r }
+                } else if l.abs() <= r.abs() { l } else { r }
+            ).into() },
+        )
+    }
+
+    pub fn maximum<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l >= r { l } else { r }
+            ).into() },
+            (f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    // return whichever is NaN, or first
+                    if l.is_nan() { l } else { r }
+                } else if l >= r { l } else { r }
+            ).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    if l.is_nan() { l } else { r }
+                } else if l.abs() >= r.abs() { l } else { r }
+            ).into() },
+        )
+    }
+
+    pub fn nanminimum<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l <= r { l } else { r }
+            ).into() },
+            (f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    // return whichever is not NaN, or first
+                    if r.is_nan() { l } else { r }
+                } else if l <= r { l } else { r }
+            ).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    if r.is_nan() { l } else { r }
+                } else if l.abs() <= r.abs() { l } else { r }
+            ).into() },
+        )
+    }
+
+    pub fn nanmaximum<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l >= r { l } else { r }
+            ).into() },
+            (f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    // return whichever is not NaN, or first
+                    if r.is_nan() { l } else { r }
+                } else if l >= r { l } else { r }
+            ).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&l, &r|
+                if l.is_nan() || r.is_nan() {
+                    if r.is_nan() { l } else { r }
+                } else if l.abs() >= r.abs() { l } else { r }
+            ).into() },
+        )
+    }
+
     pub fn pow<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
         let rhs = other.borrow();
 
