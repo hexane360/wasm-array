@@ -292,13 +292,8 @@ pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<
         });
     }
 
-    // check for iterator
-    if js_sys::try_iter(arr).map_err(|e| format!("Error in JS: {:?}", e))?.is_some() {
-        let arr = parse_nestedlist(arr)?.build_array(dtype)?;
-        return Ok(Cow::Owned(arr));
-    }
-
-    Err(format!("Array conversion not implemented for type '{}'", arr.js_typeof().as_string().unwrap()))
+    parse_nestedlist(arr)?.build_array(dtype).map(Cow::Owned)
+    //Err(format!("Array conversion not implemented for type '{}'", arr.js_typeof().as_string().unwrap()))
 }
 
 fn parse_nestedlist(val: &JsValue) -> Result<NestedList, String> {
@@ -334,5 +329,6 @@ fn parse_arrayvalue(val: &JsValue) -> Result<ArrayValue, String> {
             .map_err(|_| format!("BigInt '{}' overflows i64", val));
     }
 
-    Err(format!("Unexpected type '{}'. Expected a number.", val.js_typeof().as_string().unwrap()))
+    Err(format!("Array conversion not implemented for type '{}'", val.js_typeof().as_string().unwrap()))
+    //Err(format!("Unexpected type '{}'. Expected a number.", val.js_typeof().as_string().unwrap()))
 }

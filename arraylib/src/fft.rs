@@ -6,7 +6,7 @@ use ndarray::{Array1, ArrayViewMut, Axis, IxDyn, Dimension};
 use rustfft::{FftNum, FftPlanner, Fft};
 
 use arraylib_macro::type_dispatch;
-use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Complex};
+use crate::dtype::{DataType, DataTypeCategory, Complex};
 use crate::array::{DynArray, roll_inner};
 use crate::util::normalize_axis;
 

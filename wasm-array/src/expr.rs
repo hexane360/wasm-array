@@ -28,12 +28,35 @@ pub enum Token {
     CloseParen,
     #[token(",")]
     Comma,
-    #[token("^")]
-    Caret,
+    #[token("**")]
+    Power,
     #[token("@")]
     At,
+    #[token("%")]
+    Percent,
     #[token("pi")]
     Pi,
+    #[token("&")]
+    BitAnd,
+    #[token("|")]
+    BitOr,
+    #[token("^")]
+    BitXor,
+    #[token("==")]
+    Eq,
+    #[token("!=")]
+    NotEq,
+    #[token("<=")]
+    LessThanEq,
+    #[token("<")]
+    LessThan,
+    #[token(">=")]
+    GreaterThanEq,
+    #[token(">")]
+    GreaterThan,
+    #[token("!")]
+    Not,
+
     #[regex(r"[+-]?(?&dec)", parse_int)]
     IntLit(i64),
     // inf, nan
@@ -97,8 +120,21 @@ impl<I: Iterator<Item = Result<Token, ParseError>>> Lexer<I> {
             Token::Minus => Some(BinaryOp::Sub),
             Token::Times => Some(BinaryOp::Mul),
             Token::Divide => Some(BinaryOp::Div),
-            Token::Caret => Some(BinaryOp::Pow),
+
+            Token::Percent => Some(BinaryOp::Rem),
+            Token::Power => Some(BinaryOp::Pow),
             Token::At => Some(BinaryOp::MatMul),
+
+            Token::Eq => Some(BinaryOp::Eq),
+            Token::NotEq => Some(BinaryOp::NotEq),
+            Token::GreaterThan => Some(BinaryOp::GreaterThan),
+            Token::GreaterThanEq => Some(BinaryOp::GreaterThanEq),
+            Token::LessThan => Some(BinaryOp::LessThan),
+            Token::LessThanEq => Some(BinaryOp::LessThanEq),
+
+            Token::BitAnd => Some(BinaryOp::BitAnd),
+            Token::BitOr => Some(BinaryOp::BitOr),
+
             _ => None,
         }))
     }
@@ -107,6 +143,7 @@ impl<I: Iterator<Item = Result<Token, ParseError>>> Lexer<I> {
         Ok(self.peek()?.and_then(|token| match token {
             Token::Plus => Some(UnaryOp::Pos),
             Token::Minus => Some(UnaryOp::Neg),
+            Token::Not => Some(UnaryOp::Not),
             _ => None,
         }))
     }
@@ -155,15 +192,30 @@ pub enum BinaryOp {
     Rem,
     Pow,
     MatMul,
+    Eq,
+    NotEq,
+    LessThan,
+    GreaterThan,
+    LessThanEq,
+    GreaterThanEq,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 impl BinaryOp {
     pub fn precedence(&self) -> i64 {
         match self {
-            BinaryOp::Rem => 4,
-            BinaryOp::Add | BinaryOp::Sub => 5,
-            BinaryOp::Mul | BinaryOp::Div | BinaryOp::MatMul => 6,
-            BinaryOp::Pow => 7,
+            BinaryOp::BitOr => 2,
+            BinaryOp::BitXor => 3,
+            BinaryOp::BitAnd => 4,
+            BinaryOp::Eq | BinaryOp::NotEq |
+                BinaryOp::LessThan | BinaryOp::GreaterThan |
+                BinaryOp::LessThanEq | BinaryOp::GreaterThanEq => 5,
+            BinaryOp::Add | BinaryOp::Sub => 6,
+            BinaryOp::Rem => 7,
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::MatMul => 8,
+            BinaryOp::Pow => 9,
         }
     }
 
@@ -188,6 +240,7 @@ impl BinaryOp {
 pub enum UnaryOp {
     Pos,
     Neg,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -302,9 +355,21 @@ impl BinaryExpr {
             BinaryOp::Div => { lhs / rhs },
             BinaryOp::Mul => { lhs * rhs },
             BinaryOp::Sub => { lhs - rhs },
+
             BinaryOp::Rem => { lhs % rhs },
             BinaryOp::MatMul => { lhs.mat_mul(rhs) },
             BinaryOp::Pow => { lhs.pow(rhs) },
+
+            BinaryOp::Eq => { lhs.equals(rhs) },
+            BinaryOp::NotEq => { lhs.not_equals(rhs) },
+            BinaryOp::GreaterThan => { lhs.greater(rhs) },
+            BinaryOp::LessThan => { lhs.less(rhs) },
+            BinaryOp::GreaterThanEq => { lhs.greater_equal(rhs) },
+            BinaryOp::LessThanEq => { lhs.less_equal(rhs) },
+
+            BinaryOp::BitAnd => { lhs & rhs },
+            BinaryOp::BitOr => { lhs | rhs },
+            BinaryOp::BitXor => { lhs ^ rhs },
         })
     }
 }
@@ -315,6 +380,7 @@ impl UnaryExpr {
         Ok(match self.op {
             UnaryOp::Neg => { -inner },
             UnaryOp::Pos => { inner },
+            UnaryOp::Not => { !inner },
         })
     }
 }

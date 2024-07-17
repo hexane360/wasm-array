@@ -73,12 +73,12 @@ pub fn type_dispatch(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
                 Expr::Block(b) => {
                     let stmts = &b.block.stmts;
                     quote! { 
-                        <#ty as PhysicalType>::DATATYPE => { #( #let_stmts )* #( #stmts )* }
+                        <#ty as crate::dtype::PhysicalType>::DATATYPE => { #( #let_stmts )* #( #stmts )* }
                     }
                 },
                 block => {
                     quote! {
-                        <#ty as PhysicalType>::DATATYPE => { #( #let_stmts )* #block }
+                        <#ty as crate::dtype::PhysicalType>::DATATYPE => { #( #let_stmts )* #block }
                     }
                 },
             }

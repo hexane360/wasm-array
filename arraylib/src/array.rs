@@ -395,6 +395,19 @@ impl<'a, T: Borrow<DynArray>> ops::Div<T> for &'a DynArray {
 }
 
 #[forward_val_to_ref]
+impl<'a> ops::Not for &'a DynArray {
+    type Output = DynArray;
+
+    fn not(self) -> Self::Output {
+        let s = self;
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref s| { s.mapv(|v| !v).into() }
+        )
+    }
+}
+
+#[forward_val_to_ref]
 impl<'a, T: Borrow<DynArray>> ops::BitAnd<T> for &'a DynArray {
     type Output = DynArray;
 
@@ -406,6 +419,38 @@ impl<'a, T: Borrow<DynArray>> ops::BitAnd<T> for &'a DynArray {
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 & e2).into() },
+        )
+    }
+}
+
+#[forward_val_to_ref]
+impl<'a, T: Borrow<DynArray>> ops::BitOr<T> for &'a DynArray {
+    type Output = DynArray;
+
+    fn bitor(self, rhs: T) -> Self::Output {
+        let rhs = rhs.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 | e2).into() },
+        )
+    }
+}
+
+#[forward_val_to_ref]
+impl<'a, T: Borrow<DynArray>> ops::BitXor<T> for &'a DynArray {
+    type Output = DynArray;
+
+    fn bitxor(self, rhs: T) -> Self::Output {
+        let rhs = rhs.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 ^ e2).into() },
         )
     }
 }
@@ -687,7 +732,7 @@ impl DynArray {
         let ty = promote_types(&[self.dtype, rhs.dtype]);
         let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
-            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l == r)).into() }
         )
     }
@@ -698,7 +743,7 @@ impl DynArray {
         let ty = promote_types(&[self.dtype, rhs.dtype]);
         let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
-            (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l != r)).into() }
         )
     }
@@ -711,7 +756,7 @@ impl DynArray {
         let ty = promote_types(&[self.dtype, rhs.dtype]);
         let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
         type_dispatch!(
-            (u8, u16, u32, u64, i8, i16, i32, i64),
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l == r)).into() },
             (f32, Complex<f32>),
             |ref lhs, ref rhs| {
@@ -756,13 +801,61 @@ impl DynArray {
     }
 
     pub fn allequal<T: Borrow<DynArray>>(&self, other: T) -> bool {
-        let arr = self.equals(other).downcast::<Bool>().unwrap();
+        let arr = self.equals(other).downcast::<Bool>().expect("'equals' returned wrong type");
         arr.into_raw_vec().into_iter().all(|b| b.into())
     }
 
     pub fn allclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> bool {
         let arr = self.isclose(other, rtol, atol).downcast::<Bool>().unwrap();
         arr.into_raw_vec().into_iter().all(|b| b.into())
+    }
+
+    pub fn less<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l < r)).into() }
+        )
+    }
+
+    pub fn less_equal<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l <= r)).into() }
+        )
+    }
+
+    pub fn greater<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l > r)).into() }
+        )
+    }
+
+    pub fn greater_equal<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
+        let rhs = other.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+
+        type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|l, r| Bool::from(l >= r)).into() }
+        )
     }
 
     pub fn pow<T: Borrow<DynArray>>(&self, other: T) -> DynArray {

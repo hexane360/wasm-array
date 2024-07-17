@@ -4,7 +4,7 @@ use num::{Zero, One};
 use ndarray::{Array, ArrayView, ArrayView1, Axis, IxDyn};
 
 use arraylib_macro::type_dispatch;
-use crate::dtype::{Complex, DataType, DataTypeCategory, PhysicalType};
+use crate::dtype::{Complex, DataType, DataTypeCategory};
 use crate::array::DynArray;
 use crate::util::normalize_axis;
 
