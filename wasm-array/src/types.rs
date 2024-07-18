@@ -281,15 +281,21 @@ fn to_typestr(datatype: &DataType) -> &'static str {
     }
 }
 
-pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<Cow<'a, DynArray>, String> {
-    if let Some(val) = JsArray::downcast_ref(&arr) {
+pub fn parse_array<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Option<Cow<'a, DynArray>> {
+    JsArray::downcast_ref(&arr).map(|val| {
         // SAFETY: `arr` is a JsArray borrowed for 'a, ensuring the underlying
         // array won't be dropped or mutated for at least that region
         let array_ref: &'a DynArray = unsafe { mem::transmute(&val.inner) };
-        return Ok(match dtype {
+        match dtype {
             Some(dtype) => array_ref.cast(dtype),
             None => Cow::Borrowed(array_ref),
-        });
+        }
+    })
+}
+
+pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<Cow<'a, DynArray>, String> {
+    if let Some(arr) = parse_array(arr, dtype) {
+        return Ok(arr);
     }
 
     parse_nestedlist(arr)?.build_array(dtype).map(Cow::Owned)
@@ -312,12 +318,17 @@ fn parse_nestedlist(val: &JsValue) -> Result<NestedList, String> {
 fn parse_arrayvalue(val: &JsValue) -> Result<ArrayValue, String> {
     if let Some(val) = val.as_f64() {
         return Ok({
-            if val == 0. || (val.round() - val).abs() <= 1e-6 * val.abs() {
+            if val == 0. || (val.round() - val).abs() <= 1e-6 * val.abs() && val.is_finite() {
                 ArrayValue::Int(val.round() as i64)
             } else {
                 ArrayValue::Float(val)
             }
         });
+    }
+
+    if let Some(arr) = parse_array(val, None) {
+        return ArrayValue::from_arr(arr.as_ref())
+            .ok_or_else(|| format!("Expected number or scalar array, instead got array of shape {:?}", arr.shape()));
     }
 
     if let Some(val) = val.as_bool() {

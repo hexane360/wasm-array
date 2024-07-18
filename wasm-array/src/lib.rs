@@ -25,6 +25,8 @@ pub mod types;
 use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc, BinaryFunc};
 use types::{ArrayInterchange, parse_arraylike};
 
+// # typescript exports
+
 #[wasm_bindgen(typescript_custom_section)]
 const TYPESCRIPT_PRELUDE: &'static str = r##"
 
@@ -72,7 +74,7 @@ type NestedArray<T> = T | ReadonlyArray<NestedArray<T>>;
 /**
  * Array-like. Can be a number, `BigInt`, boolean, typed array, or nested array.
  */
-type ArrayLike = NArray | NestedArray<number | BigInt | boolean> | ArrayBufferView;
+type ArrayLike = NArray | NestedArray<number | BigInt | boolean | NArray> | ArrayBufferView;
 
 type ShapeLike = ReadonlyArray<number> | Uint8Array | Uint16Array | Uint32Array | BigUint64Array;
 type StridesLike = ShapeLike | Int8Array | Int16Array | Int32Array | BigInt64Array;
@@ -136,6 +138,8 @@ export function geomspace(start: number, end: number, n: number, dtype?: DataTyp
 export function eye(ndim: number, dtype?: DataTypeLike): NArray;
 "##;
 
+// # wasm imports
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -162,6 +166,8 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "FFTNorm")]
     pub type FFTNorm;
 }
+
+// # struct definitions
 
 #[wasm_bindgen(js_name = DataType)]
 #[derive(Clone, Copy)]
@@ -307,6 +313,9 @@ impl JsArray {
         })
     }
 }
+
+// # array functions
+// ## construction functions
 
 #[wasm_bindgen]
 /// Create a `DataType` object from a `DataTypeLike`.
@@ -466,50 +475,7 @@ pub fn eye(ndim: f64, dtype: &DataTypeLike) -> Result<JsArray, String> {
     })
 }
 
-#[wasm_bindgen]
-/// Return the ceiling of the input, element-wise
-pub fn ceil(arr: &ArrayLike) -> Result<JsArray, String> {
-    catch_panic(|| {
-        let arr = parse_arraylike(arr, None)?;
-        Ok(arr.as_ref().ceil().into())
-    })
-}
-
-#[wasm_bindgen]
-/// Return the floor of the input, element-wise
-pub fn floor(arr: &ArrayLike) -> Result<JsArray, String> {
-    catch_panic(|| {
-        let arr = parse_arraylike(arr, None)?;
-        Ok(arr.as_ref().ceil().into())
-    })
-}
-
-#[wasm_bindgen]
-/// Return the absolute value of the input, element-wise
-pub fn abs(arr: &ArrayLike) -> Result<JsArray, String> {
-    catch_panic(|| {
-        let arr = parse_arraylike(arr, None)?;
-        Ok(arr.as_ref().abs().into())
-    })
-}
-
-#[wasm_bindgen]
-/// Return the complex conjugate of the input, element-wise
-pub fn conj(arr: &ArrayLike) -> Result<JsArray, String> {
-    catch_panic(|| {
-        let arr = parse_arraylike(arr, None)?; 
-        Ok(arr.as_ref().conj().into())
-    })
-}
-
-#[wasm_bindgen]
-/// Return the square root of the input, element-wise
-pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
-    catch_panic(|| {
-        let arr = parse_arraylike(arr, None)?;
-        Ok(arr.as_ref().sqrt().into())
-    })
-}
+// ## reshaping functions
 
 #[wasm_bindgen]
 /// Roll elements of the array by `shifts`, along axes `axes`.
@@ -554,6 +520,53 @@ pub fn ravel(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
         let arr = parse_arraylike(arr, None)?;
         Ok(arr.as_ref().ravel().into())
+    })
+}
+
+// ## elementwise functions
+
+#[wasm_bindgen]
+/// Return the ceiling of the input, element-wise
+pub fn ceil(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().ceil().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the floor of the input, element-wise
+pub fn floor(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().ceil().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the absolute value of the input, element-wise
+pub fn abs(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().abs().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the complex conjugate of the input, element-wise
+pub fn conj(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?; 
+        Ok(arr.as_ref().conj().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the square root of the input, element-wise
+pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().sqrt().into())
     })
 }
 
@@ -604,6 +617,8 @@ pub fn nanmaximum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String>
         Ok(arr1.as_ref().nanmaximum(arr2.as_ref()).into())
     })
 }
+
+// ## reductions
 
 #[wasm_bindgen]
 // Return the minimum element along the given axes.
@@ -755,6 +770,8 @@ pub fn nanmean(arr: &ArrayLike, axes: Option<AxesLike>) -> Result<JsArray, Strin
     })
 }
 
+// ## FFT functions
+
 #[wasm_bindgen]
 /// Compute the Fourier transform of the input array
 /// 
@@ -885,6 +902,8 @@ pub fn ifft2shift(arr: &ArrayLike) -> Result<JsArray, String> {
     })
 }
 
+// ## reductions to bool
+
 #[wasm_bindgen]
 pub fn allequal(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<bool, String> {
     catch_panic(|| {
@@ -903,12 +922,41 @@ pub fn allclose(arr1: &ArrayLike, arr2: &ArrayLike, rtol: Option<f64>, atol: Opt
     })
 }
 
+// ## from_interchange
+
 #[wasm_bindgen]
 /// Create an array from a JSON interchange format, loosely conforming with numpy's __array_interface__ protocol.
 pub fn from_interchange(obj: IArrayInterchange) -> Result<JsArray, String> {
     catch_panic(|| {
         Ok(ArrayInterchange::try_from(obj)?.to_array()?.into())
     })
+}
+
+// ## constants
+// TODO: make these properties
+
+#[wasm_bindgen]
+/// Return the constant pi
+pub fn pi() -> JsArray {
+    DynArray::from_val(std::f64::consts::PI).into()
+}
+
+#[wasm_bindgen]
+/// Return the constant tau = 2pi
+pub fn tau() -> JsArray {
+    DynArray::from_val(std::f64::consts::TAU).into()
+}
+
+#[wasm_bindgen]
+/// Return a NaN value
+pub fn nan() -> JsArray {
+    DynArray::from_val(std::f64::NAN).into()
+}
+
+#[wasm_bindgen]
+/// Return an infinity value
+pub fn inf() -> JsArray {
+    DynArray::from_val(std::f64::INFINITY).into()
 }
 
 static ARRAY_FUNCS: OnceLock<FuncMap> = OnceLock::new();

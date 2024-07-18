@@ -1,6 +1,7 @@
 
 use std::iter;
 
+use arraylib_macro::type_dispatch;
 use ndarray::ArrayD;
 
 use crate::array::DynArray;
@@ -105,6 +106,24 @@ impl ArrayValue {
             ArrayValue::Float(_) => DataTypeCategory::Floating,
             ArrayValue::Int(_) => DataTypeCategory::Signed,
             ArrayValue::Boolean(_) => DataTypeCategory::Boolean,
+        }
+    }
+
+    pub fn from_arr(arr: &DynArray) -> Option<ArrayValue> {
+        if arr.shape().len() > 0 {
+            None
+        } else {
+            use crate::cast::Cast;
+            Some(type_dispatch!(
+                (u8, u16, u32, u64, i8, i16, i32, i64),
+                |ref arr| { ArrayValue::Int(*arr.iter().next().unwrap() as i64) },
+                (f32, f64),
+                |ref arr| { ArrayValue::Float(*arr.iter().next().unwrap() as f64) },
+                (Complex<f32>,),
+                |ref arr| { ArrayValue::Complex(Complex::<f32>::cast_complex128().unwrap()(*arr.iter().next().unwrap())) },
+                (Complex<f64>,),
+                |ref arr| { ArrayValue::Complex(*arr.iter().next().unwrap()) },
+            ))
         }
     }
 }
