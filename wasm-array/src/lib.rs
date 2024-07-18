@@ -618,6 +618,70 @@ pub fn nanmaximum(arr1: &ArrayLike, arr2: &ArrayLike) -> Result<JsArray, String>
     })
 }
 
+#[wasm_bindgen]
+/// Return the sine of the input (in radians), element-wise
+pub fn sin(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().sin().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the cosine of the input (in radians), element-wise
+pub fn cos(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().cos().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the tangent of the input (in radians), element-wise
+pub fn tan(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().tan().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the arcsine of the input, element-wise. Returns a value in radians
+pub fn arcsin(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().arcsin().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the arccosine of the input, element-wise. Returns a value in radians
+pub fn arccos(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().arccos().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the arctangent of the input, element-wise. Returns a value in radians
+pub fn arctan(arr: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let arr = parse_arraylike(arr, None)?;
+        Ok(arr.as_ref().arctan().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the arctangent of the inputs `y` and `x`, element-wise. Returns a value in radians
+pub fn arctan2(y: &ArrayLike, x: &ArrayLike) -> Result<JsArray, String> {
+    catch_panic(|| {
+        let y = parse_arraylike(y, None)?;
+        let x = parse_arraylike(x, None)?;
+        Ok(y.as_ref().arctan2(x.as_ref()).into())
+    })
+}
+
 // ## reductions
 
 #[wasm_bindgen]
@@ -970,6 +1034,14 @@ fn init_array_funcs() -> FuncMap {
         Box::new(BinaryFunc::new("maximum", |l, r| l.maximum(r))),
         Box::new(BinaryFunc::new("nanminimum", |l, r| l.nanminimum(r))),
         Box::new(BinaryFunc::new("nanmaximum", |l, r| l.nanmaximum(r))),
+
+        Box::new(UnaryFunc::new("sin", |v| v.sin())),
+        Box::new(UnaryFunc::new("cos", |v| v.cos())),
+        Box::new(UnaryFunc::new("tan", |v| v.tan())),
+        Box::new(UnaryFunc::new("arcsin", |v| v.arcsin())),
+        Box::new(UnaryFunc::new("arccos", |v| v.arccos())),
+        Box::new(UnaryFunc::new("arctan", |v| v.arctan())),
+        Box::new(BinaryFunc::new("arctan2", |y, x| y.arctan2(x))),
     ];
 
     funcs.into_iter().map(|f| (f.name(), f)).collect()

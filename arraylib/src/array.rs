@@ -696,6 +696,66 @@ impl DynArray {
         )
     }
 
+    // trig functions
+
+    pub fn sin(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.sin()).into() },
+        )
+    }
+
+    pub fn cos(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.cos()).into() },
+        )
+    }
+
+    pub fn tan(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.tan()).into() },
+        )
+    }
+
+    pub fn arcsin(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.asin()).into() },
+        )
+    }
+
+    pub fn arccos(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.acos()).into() },
+        )
+    }
+
+    pub fn arctan(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.atan()).into() },
+        )
+    }
+
+    pub fn arctan2<A: Borrow<DynArray>>(&self, other: A) -> DynArray {
+        let other = other.borrow();
+        let ty = promote_types(&[self.dtype, other.dtype]).as_min_category(DataTypeCategory::Floating);
+        let (y, x) = self.cast(ty).broadcast_with(&other.cast(ty)).unwrap();
+        type_dispatch!(
+            (f32, f64),
+            |ref y, ref x| { Zip::from(y).and(x).map_collect(|y, x| y.atan2(*x) ).into() },
+        )
+    }
+
     pub fn ceil(&self) -> DynArray {
         let s = self;
         type_dispatch!(
