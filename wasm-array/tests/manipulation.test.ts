@@ -37,3 +37,20 @@ test("reshape", () => {
         np.reshape(arr, [5, -1]);
     }).toThrowError("Cannot reshape array of size 6 into shape [5, -1]");
 })
+
+test("meshgrid", () => {
+    const yvec = np.array([2, 8], 'uint64');
+    const xvec = np.array([1, 2, 5, 10], 'int16');
+
+    const [ymat, xmat] = np.meshgrid(yvec, xvec);
+
+    expect(ymat).arrayEqual(np.array([[2, 2, 2, 2], [8, 8, 8, 8]], 'uint64'));
+    expect(xmat).arrayEqual(np.array([[1, 2, 5, 10], [1, 2, 5, 10]], 'int16'));
+
+    let [arr] = np.meshgrid([1, 2, 3, 4]);
+    expect(arr).arrayEqual(np.array([1, 2, 3, 4], 'int64'));
+
+    expect(() => {
+        np.meshgrid([[1, 2], [2, 4]], [2, 4, 8])
+    }).toThrowError("'meshgrid' requires 1D input arrays");
+})

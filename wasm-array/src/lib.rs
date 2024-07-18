@@ -102,6 +102,15 @@ export function expr(strs: ReadonlyArray<string>, ...lits: ReadonlyArray<ArrayLi
 export function indices(shape: ShapeLike, dtype?: DataTypeLike, sparse?: boolean): Array<NArray>;
 
 /**
+ * Return a list of coordinate matrices from 1D coordinate vectors.
+ * 
+ * Given input vectors of lengths `(n_1, n_2, ... n_n)`, returns an
+ * array of vectors of shape `(n_1, n_2, ... n_n)`, with values
+ * corresponding to the values of the input arrays.
+ */
+export function meshgrid(...arr: ReadonlyArray<ArrayLike>): Array<NArray>;
+
+/**
  * Return an array constructed from the given values, of the specified dtype.
  */
 export function array(arr: ArrayLike, dtype?: DataTypeLike): NArray;
@@ -520,6 +529,16 @@ pub fn ravel(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
         let arr = parse_arraylike(arr, None)?;
         Ok(arr.as_ref().ravel().into())
+    })
+}
+
+#[wasm_bindgen(variadic, skip_typescript)]
+pub fn meshgrid(arrs: &JsValue) -> Result<Vec<JsArray>, String> {
+    catch_panic(|| {
+        let arrs = arrs.clone().dyn_into::<js_sys::Array>().map_err(|_| "'arrs' must be an array".to_owned())?;
+        let arrs: Vec<_> = arrs.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
+
+        DynArray::meshgrid(arrs, false).map(|v| v.into_iter().map(|arr| arr.into()).collect())
     })
 }
 

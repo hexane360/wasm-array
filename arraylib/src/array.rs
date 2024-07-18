@@ -206,6 +206,30 @@ impl DynArray {
         Array1::geomspace(start, end, n).expect("Invalid bounds for geomspace").into_dyn().into()
     }
 
+    pub fn meshgrid(arrs: Vec<DynArray>, sparse: bool) -> Result<Vec<DynArray>, String> {
+        let mut shape: Vec<usize> = Vec::new();
+
+        for arr in &arrs {
+            if arr.ndim() != 1 {
+                return Err("'meshgrid' requires 1D input arrays".to_owned());
+            }
+            shape.push(arr.size())
+        }
+
+        Ok(arrs.into_iter().enumerate().map(|(i, arr)| {
+            type_dispatch!(
+                (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+                |ref arr| {
+                    let slice: Vec<SliceInfoElem> = (0..shape.len()).map(|j| if i == j { SliceInfoElem::from(..) } else { SliceInfoElem::NewAxis }).collect();
+                    let slice = arr.slice(&slice[..]);
+                    if sparse { slice } else {
+                        slice.broadcast(shape.clone()).unwrap()
+                    }.as_standard_layout().to_owned().into()
+                }
+            )
+        }).collect())
+    }
+
     pub fn eye<T: PhysicalType + Pod + UnwindSafe + RefUnwindSafe + Zero + One>(ndim: usize) -> Self {
         let arr: Array2<T> = Array2::eye(ndim);
         arr.into_dyn().into()
