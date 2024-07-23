@@ -1,7 +1,7 @@
 use ndarray::{Array, arr1, arr2};
 
 use arraylib::array::DynArray;
-use arraylib::dtype::DataType;
+use arraylib::dtype::{DataType, Complex};
 
 #[test]
 fn test_add_numeric() {
@@ -107,4 +107,22 @@ fn test_nanminimum() {
     let expected: DynArray = arr1(&[10.0, 0.0, f32::NAN, 100.0]).into();
 
     assert!(expected.allclose(a1.nanminimum(a2), 1e-8, 0.0));
+}
+
+#[test]
+fn test_exp() {
+    let a1: DynArray = arr1(&[1.0f32, 2.0, -1.0, -5.0]).into();
+    let expected: DynArray = arr1(&[2.7182817, 7.389056, 0.36787945, 0.006737947]).into();
+
+    //println!("actual: {}", a1.exp());
+    assert!(expected.allclose(a1.exp(), 1e-6, 1e-8));
+}
+
+#[test]
+fn test_exp_complex() {
+    let a1: DynArray = arr1(&[Complex::new(0.0f64, 0.0), Complex::new(1.0, 0.0), Complex::new(0.0, 3.141592653589793), Complex::new(0.0, -3.141592653589793)]).into();
+    let expected: DynArray = arr1(&[Complex::new(1.0f64, 0.0), Complex::new(2.718281828459045f64, 0.0), Complex::new(-1.0f64, 0.0), Complex::new(-1.0f64, 0.0)]).into();
+
+    //println!("actual: {}", a1.exp());
+    assert!(expected.allclose(a1.exp(), 1e-12, 1e-12));
 }

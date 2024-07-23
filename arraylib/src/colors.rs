@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use num::{Float, ToPrimitive};
-use ndarray::{ArrayViewD, ArrayView1, ArrayView2, ArrayD, Zip, Axis, s};
+use ndarray::{ArrayViewD, ArrayView1, ArrayView2, ArrayViewMut1, ArrayD, Zip, Axis, s};
 use include_bytes_aligned::include_bytes_aligned;
 use paste::paste;
 
@@ -80,26 +80,62 @@ pub fn normed_float_to_u8<F: Float + ToPrimitive>(val: F) -> u8 {
     (val.clamp(F::zero(), F::one() - F::epsilon()) * scale).floor().to_u8().expect("Invalid value")
 }
 
-pub fn apply_cmap_float<'a, 'b, F: Float + ToPrimitive>(cmap: ArrayView2<'a, f32>, arr: ArrayViewD<'b, F>) -> ArrayD<f32> {
+#[inline]
+fn apply_cmap_inner<F: Float + ToPrimitive>(
+    val: F,
+    mut out: ArrayViewMut1<'_, f32>,
+    cmap: &ArrayView2<'_, f32>,
+    min_color: Option<ArrayView1<'_, f32>>,
+    max_color: Option<ArrayView1<'_, f32>>,
+    invalid_color: ArrayView1<'_, f32>,
+) {
+    if let Some(min_c) = min_color {
+        if val < F::zero() {
+            out.assign(&min_c);
+            return;
+        }
+    }
+    if let Some(max_c) = max_color {
+        if val > F::one() {
+            out.assign(&max_c);
+            return;
+        }
+    }
+    if val.is_nan() {
+        out.assign(&invalid_color);
+        return;
+    }
+    let i = normed_float_to_u8(val) as usize;
+    out.slice_mut(s![..3]).assign(&cmap.index_axis(Axis(0), i));
+    out[3] = 1.;
+}
+
+pub fn apply_cmap_float<F: Float + ToPrimitive>(
+    cmap: ArrayView2<'_, f32>, arr: ArrayViewD<'_, F>,
+    min_color: Option<ArrayView1<'_, f32>>,
+    max_color: Option<ArrayView1<'_, f32>>,
+    invalid_color: ArrayView1<'_, f32>,
+) -> ArrayD<f32> {
     assert!(cmap.shape() == &[256, 3]);
     let mut out_shape = arr.shape().to_vec(); out_shape.push(4);
     let mut out: ArrayD<f32> = ArrayD::zeros(out_shape);
 
-    // TODO handle nans here
-
     Zip::from(arr)
         .and(out.rows_mut())
         .for_each(|v, mut out| {
-            let i = normed_float_to_u8(*v) as usize;
-            out.view_mut().slice_mut(s![..3]).assign(&cmap.index_axis(Axis(0), i));
-            out.view_mut()[3] = 1.;
+            apply_cmap_inner(*v, out.view_mut(), &cmap, min_color, max_color, invalid_color);
          });
 
     out
 }
 
-pub fn apply_cmap_u8<'a, 'b, F: Float + ToPrimitive>(cmap: ArrayView2<'a, f32>, arr: ArrayViewD<'b, F>) -> ArrayD<u8> {
-    let out = apply_cmap_float(cmap, arr);
+pub fn apply_cmap_u8<F: Float + ToPrimitive>(
+    cmap: ArrayView2<'_, f32>, arr: ArrayViewD<'_, F>,
+    min_color: Option<ArrayView1<'_, f32>>,
+    max_color: Option<ArrayView1<'_, f32>>,
+    invalid_color: ArrayView1<'_, f32>,
+) -> ArrayD<u8> {
+    let out = apply_cmap_float(cmap, arr, min_color, max_color, invalid_color);
     out.mapv(normed_float_to_u8)
 }
 

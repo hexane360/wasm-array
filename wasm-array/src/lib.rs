@@ -7,13 +7,14 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, UnwindSafe};
 use std::sync::OnceLock;
 
-use arraylib::bool::Bool;
 use num::Complex;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use ndarray::Array1;
 
+use arraylib::log;
+use arraylib::bool::Bool;
 use arraylib::array::DynArray;
 use arraylib::dtype::DataType;
 use arraylib::error::ArrayError;
@@ -153,6 +154,8 @@ export function eye(ndim: number, dtype?: DataTypeLike): NArray;
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+    #[wasm_bindgen(js_namespace = console)]
+    fn error(s: &str);
 
     #[wasm_bindgen(typescript_type = "IArrayInterchange")]
     pub type IArrayInterchange;
@@ -237,6 +240,11 @@ impl JsArray {
         self.inner.dtype().item_size()
     }
 
+    #[wasm_bindgen]
+    pub fn clone(&self) -> JsArray {
+        self.inner.clone().into()
+    }
+
     #[wasm_bindgen(js_name = toJSON)]
     /// Convert the array to a simple JSON representation.
     pub fn to_json(&self) -> Result<js_sys::Object, JsValue> {
@@ -281,11 +289,17 @@ impl JsArray {
     /// Apply a colormap to the array, assuming values are normalized between 0 and 1.
     pub fn apply_cmap(&self, min_color: Option<ColorLike>, max_color: Option<ColorLike>, invalid_color: Option<ColorLike>) -> Result<Clamped<Vec<u8>>, String> {
         let min_color: Option<Array1<f32>> = min_color.map(|c| c.try_into()).transpose()?;
+        let max_color: Option<Array1<f32>> = max_color.map(|c| c.try_into()).transpose()?;
+        let invalid_color: Array1<f32> = invalid_color.map(|c| c.try_into()).transpose()?.unwrap_or(Array1::<f32>::zeros((4,)));
         //let min_color = if min_color.is_null() { None } else { Some(get_color(min_color)?) };
         //let max_color = if max_color.is_null() { None } else { Some(get_color(max_color)?) };
         //let invalid_color = if invalid_color.is_null() { None } else { Some(get_color(invalid_color)?) };
 
-        Ok(Clamped(self.inner.apply_cmap().downcast::<u8>().unwrap().into_raw_vec()))
+        Ok(Clamped(self.inner.apply_cmap(
+            min_color.as_ref().map(|a| a.view()),
+            max_color.as_ref().map(|a| a.view()),
+            invalid_color.view(),
+        ).downcast::<u8>().unwrap().into_raw_vec()))
     }
 
     /// Return the array converted to datatype `dtype`. Throws an error if the conversion is not possible.
@@ -321,6 +335,16 @@ impl JsArray {
             Ok(self.inner.ravel().into())
         })
     }
+}
+
+impl AsRef<DynArray> for JsArray {
+    fn as_ref(&self) -> &DynArray { &self.inner }
+}
+
+impl std::ops::Deref for JsArray {
+    type Target = DynArray;
+
+    fn deref(&self) -> &DynArray { &self.inner }
 }
 
 // # array functions
@@ -586,6 +610,16 @@ pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
     catch_panic(|| {
         let arr = parse_arraylike(arr, None)?;
         Ok(arr.as_ref().sqrt().into())
+    })
+}
+
+#[wasm_bindgen]
+/// Return the exponential e^x of the input, element-wise
+pub fn exp(arr: JsArray) -> Result<JsArray, String> {
+    catch_panic(|| {
+        //let arr = parse_arraylike(arr, None)?;
+        println!("exp({:?})", arr.as_ref());
+        Ok(arr.as_ref().exp().into())
     })
 }
 
@@ -1068,7 +1102,7 @@ fn init_array_funcs() -> FuncMap {
 
 #[wasm_bindgen(variadic, skip_typescript)]
 pub fn expr(strs: Vec<String>, lits: &JsValue) -> Result<JsArray, String> {
-    catch_panic(|| {
+        set_panic_hook();
         let lits = lits.clone().dyn_into::<js_sys::Array>().map_err(|_| "'lits' must be an array".to_owned())?;
         let lits: Vec<_> = lits.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
 
@@ -1076,30 +1110,35 @@ pub fn expr(strs: Vec<String>, lits: &JsValue) -> Result<JsArray, String> {
         //return Err(format!("strs: {:?} lits: {:?}", strs, lits.into_iter().map(|a| a.inner).collect_vec()));
         let expr = parse_with_literals(strs.iter().map(|s| s.as_ref()), lits.into_iter().map(Token::ArrayLit))
             .map_err(|e| format!("{:?}", e))?;
+        //log::log(format!("Parsed expr: {:?}", &expr));
+
         let vars = HashMap::new();
         match expr.exec(&vars, funcs) {
             Ok(arr) => Ok(arr.into()),
             Err(e) => Err(format!("{:?}", e)),
         }
-    })
 }
 
 fn catch_panic<T, F: FnOnce() -> Result<T, String> + UnwindSafe>(f: F) -> Result<T, String> {
+    /*
     match catch_unwind(f) {
         Ok(result) => result,
         Err(e) => Err(match e.downcast_ref::<ArrayError>() {
             Some(e) => e.to_string(),
             None => format!("panicked!")
         })
-    }
+    }*/
+    f()
 }
 
 pub fn set_panic_hook() {
     console_error_panic_hook::set_once();
+
+    log::subscribe(Box::new(log));
 }
 
 #[wasm_bindgen(start)]
 fn main() -> Result<(), JsValue> {
-    //set_panic_hook();
+    set_panic_hook();
     Ok(())
 }

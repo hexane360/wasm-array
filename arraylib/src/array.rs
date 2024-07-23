@@ -8,7 +8,7 @@ use bytemuck::Pod;
 use itertools::Itertools;
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, Array1, Array2, ArrayD, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, IsClose, promote_types};
@@ -16,6 +16,7 @@ use crate::cast::Cast;
 use crate::error::ArrayError;
 use crate::colors::{magma, apply_cmap_u8};
 use crate::util::normalize_axis;
+use crate::log;
 
 pub struct DynArray {
     dtype: DataType,
@@ -298,6 +299,19 @@ impl DynArray {
             |ref s| { s.view().into_shape(vec![size]).unwrap().as_standard_layout().to_owned().into() }
         )
     }
+
+    pub fn try_mul<A: Borrow<DynArray>>(&self, rhs: A) -> Result<DynArray, String> {
+        let rhs = rhs.borrow();
+
+        let ty = promote_types(&[self.dtype, rhs.dtype]);
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).map_err(|e| e.to_string())?;
+        Ok(type_dispatch!(
+            (u8, u16, u32, u64, i8, i16, i32, i64),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1.wrapping_mul(e2)).into() },
+            (Bool, f32, f64, Complex<f32>, Complex<f64>),
+            |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1 * e2).into() },
+        ))
+    }
 }
 
 fn align_and_cast_buf<T: bytemuck::Pod, U: bytemuck::NoUninit + bytemuck::AnyBitPattern>(buf: Box<[T]>) -> Vec<U> {
@@ -389,7 +403,7 @@ impl<'a, T: Borrow<DynArray>> ops::Mul<T> for &'a DynArray {
         let rhs = rhs.borrow();
 
         let ty = promote_types(&[self.dtype, rhs.dtype]);
-        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).unwrap();
+        let (lhs, rhs) = self.cast(ty).broadcast_with(&rhs.cast(ty)).expect("Failed to broadcast");
         type_dispatch!(
             (u8, u16, u32, u64, i8, i16, i32, i64),
             |ref lhs, ref rhs| { Zip::from(lhs).and(rhs).map_collect(|&e1, &e2| e1.wrapping_mul(e2)).into() },
@@ -705,7 +719,27 @@ impl DynArray {
     }
 
     pub fn exp(&self) -> DynArray {
+        //log::log(format!("DynArray::exp(), dtype {}", self.dtype()));
         let s = self.cast_min_category(DataTypeCategory::Floating);
+        //log::log(format!("new dtype {}", self.dtype()));
+
+        /*
+        if let Some(arr) = s.downcast_ref::<Complex<f64>>() {
+            log::log("downcasted");
+            let arr = arr.clone();
+            let mut i = 0;
+            let arr = arr.mapv(|e| {
+                let Complex { re, im } = e;
+                log::log(format!("{}, re = {}, im = {}", i, re, im));
+                i += 1;
+                Complex::new(re.exp(), im)
+                //Complex::from_polar(re, im)
+            });
+            log::log("completed exp");
+            return arr.into()
+        }
+        */
+
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.mapv(|e| e.exp()).into() },
@@ -726,7 +760,7 @@ impl DynArray {
         let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.mapv(|e| e.sin()).into() },
+            |ref s| { s.map(|e| e.sin()).into() },
         )
     }
 
@@ -734,7 +768,7 @@ impl DynArray {
         let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.mapv(|e| e.cos()).into() },
+            |ref s| { s.map(|e| e.cos()).into() },
         )
     }
 
@@ -742,7 +776,7 @@ impl DynArray {
         let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.mapv(|e| e.tan()).into() },
+            |ref s| { s.map(|e| e.tan()).into() },
         )
     }
 
@@ -1075,11 +1109,15 @@ impl DynArray {
         )
     }
 
-    pub fn apply_cmap(&self) -> DynArray {
+    pub fn apply_cmap(&self,
+        min_color: Option<ArrayView1<'_, f32>>,
+        max_color: Option<ArrayView1<'_, f32>>,
+        invalid_color: ArrayView1<'_, f32>,
+    ) -> DynArray {
         let s = self;
         type_dispatch!(
             (f32, f64),
-            |ref s| { apply_cmap_u8(magma(), s.view()).into() }
+            |ref s| { apply_cmap_u8(magma(), s.view(), min_color, max_color, invalid_color).into() }
         )
     }
 

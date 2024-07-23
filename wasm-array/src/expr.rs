@@ -57,21 +57,21 @@ pub enum Token {
     #[token("!")]
     Not,
 
-    #[regex(r"[+-]?(?&dec)", parse_int)]
+    #[regex(r"(?&dec)", parse_int)]
     IntLit(i64),
     // inf, nan
-    #[regex(r"[+-]?(inf|nan)", parse_float, ignore(ascii_case))]
+    #[regex(r"(inf|nan)", parse_float, ignore(ascii_case))]
     // 5., 5.e3
-    #[regex(r"[+-]?(?&dec)\.(?&dec)?(?&exp)?", parse_float)]
+    #[regex(r"(?&dec)\.(?&dec)?(?&exp)?", parse_float)]
     // .5, .5e-3
-    #[regex(r"[+-]?\.(?&dec)(?&exp)?", parse_float)]
+    #[regex(r"\.(?&dec)(?&exp)?", parse_float)]
     // 1e5
-    #[regex(r"[+-]?(?&dec)(?&exp)", parse_float)]
+    #[regex(r"(?&dec)(?&exp)", parse_float)]
     FloatLit(f64),
     // 5j, 5.j, 5.5j, 5e3j
-    #[regex(r"[+-]?(?&dec)(\.(?&dec))?(?&exp)?j", parse_complex)]
+    #[regex(r"(?&dec)(\.(?&dec)?)?(?&exp)?j", parse_complex)]
     // .5j, .5e-3j
-    #[regex(r"[+-]?\.(?&dec)(?&exp)?j", parse_complex)]
+    #[regex(r"\.(?&dec)(?&exp)?j", parse_complex)]
     ComplexLit(Complex<f64>),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9]*", |lexer| Rc::from(lexer.slice()))]
     Ident(Rc<str>),
@@ -324,11 +324,13 @@ pub type FuncMap = HashMap<&'static str, Box<dyn ArrayFunc + Sync + Send>>;
 
 impl Expr {
     pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
+        //log::log(&format!("Expr::exec({:?})", &self));
         match self {
             Expr::Parenthesized(inner) => inner.exec(vars, funcs),
             Expr::FuncCall(e) => {
                 let func = funcs.get(&*e.name).ok_or_else(|| ExecError::Other(format!("Undefined function '{}'", &e.name)))?;
                 let args: Vec<DynArray> = e.args.iter().map(|e| e.exec(vars, funcs)).try_collect()?;
+                //log::log(&format!("FuncCall::exec(fn: {:?}, args: {:?})", e.name, &args));
                 func.call(&args)
             },
             Expr::Binary(e) => e.exec(vars, funcs),
@@ -350,10 +352,22 @@ impl BinaryExpr {
     pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
         let lhs = self.lhs.exec(vars, funcs)?;
         let rhs = self.rhs.exec(vars, funcs)?;
+        //log::log(&format!("BinaryExpr::exec(lhs: {:?}, op: {:?}, rhs: {:?})", &lhs, &self.op, &rhs));
         Ok(match self.op {
             BinaryOp::Add => { lhs + rhs },
             BinaryOp::Div => { lhs / rhs },
-            BinaryOp::Mul => { lhs * rhs },
+            BinaryOp::Mul => {
+                match lhs.try_mul(rhs) {
+                    Ok(val) => {
+                        //log::log(&format!("returning: {:?}", &val));
+                        val
+                    }
+                    Err(e) => {
+                        //log::log(&format!("Error in mul: {}", e));
+                        panic!("{}", e);
+                    }
+                }
+            },
             BinaryOp::Sub => { lhs - rhs },
 
             BinaryOp::Rem => { lhs % rhs },
@@ -377,6 +391,7 @@ impl BinaryExpr {
 impl UnaryExpr {
     pub fn exec(&self, vars: &HashMap<Rc<str>, DynArray>, funcs: &FuncMap) -> Result<DynArray, ExecError> {
         let inner = self.inner.exec(vars, funcs)?;
+        //log::log(&format!("UnaryExpr::exec(op: {:?}, inner: {:?})", &self.op, &inner));
         Ok(match self.op {
             UnaryOp::Neg => { -inner },
             UnaryOp::Pos => { inner },
@@ -434,8 +449,8 @@ pub fn parse<T: AsRef<str>>(input: T) -> Result<Expr, ParseError> {
 }
 
 fn parse_expr<I: Iterator<Item = Result<Token, ParseError>>>(lexer: &mut Lexer<I>) -> Result<Expr, ParseError> {
-   let lhs = parse_unary(lexer)?;
-   parse_binary(lexer, lhs, None)
+    let lhs = parse_unary(lexer)?;
+    parse_binary(lexer, lhs, None)
 }
 
 fn parse_primary<I: Iterator<Item = Result<Token, ParseError>>>(lexer: &mut Lexer<I>) -> Result<Expr, ParseError> {
@@ -483,7 +498,17 @@ fn parse_unary<I: Iterator<Item = Result<Token, ParseError>>>(lexer: &mut Lexer<
     if let Some(op) = lexer.as_unary_op()? {
         lexer.next();
         let inner = parse_unary(lexer)?.into();
-        return Ok(Expr::Unary(UnaryExpr { op, inner }));
+
+        // fuse +/- operators with literals
+        return Ok(match (op, inner) {
+            (UnaryOp::Pos, Expr::Literal(LiteralExpr::Int(v))) => Expr::Literal(LiteralExpr::Int(v)),
+            (UnaryOp::Pos, Expr::Literal(LiteralExpr::Float(v))) => Expr::Literal(LiteralExpr::Float(v)),
+            (UnaryOp::Pos, Expr::Literal(LiteralExpr::Complex(v))) => Expr::Literal(LiteralExpr::Complex(v)),
+            (UnaryOp::Neg, Expr::Literal(LiteralExpr::Int(v))) => Expr::Literal(LiteralExpr::Int(-v)),
+            (UnaryOp::Neg, Expr::Literal(LiteralExpr::Float(v))) => Expr::Literal(LiteralExpr::Float(-v)),
+            (UnaryOp::Neg, Expr::Literal(LiteralExpr::Complex(v))) => Expr::Literal(LiteralExpr::Complex(-v)),
+            (op, inner) => Expr::Unary(UnaryExpr { op, inner: inner.into() }),
+        })
     }
 
     parse_primary(lexer)
@@ -554,6 +579,22 @@ mod tests {
     }
 
     #[test]
+    fn test_binary_parse_simple() {
+        assert_eq!(
+            parse("1+2+3"),
+            Ok(Expr::Binary(BinaryExpr {
+                lhs: Expr::Binary(BinaryExpr {
+                    lhs: Expr::Literal(LiteralExpr::Int(1)).into(),
+                    op: BinaryOp::Add,
+                    rhs: Expr::Literal(LiteralExpr::Int(2)).into(),
+                }).into(),
+                op: BinaryOp::Add,
+                rhs: Expr::Literal(LiteralExpr::Int(3)).into(),
+            }))
+        );
+    }
+
+    #[test]
     fn test_unary_parse() {
         assert_eq!(
             parse("1 + +-+a"),
@@ -595,5 +636,31 @@ mod tests {
                 ]
             }))
         )
+    }
+
+    #[test]
+    fn test_complex_literals() {
+        assert_eq!(
+            parse("5.j"),
+            Ok(Expr::Literal(LiteralExpr::Complex(Complex::new(0.0, 5.0)))),
+        );
+
+        assert_eq!(
+            parse("1j"),
+            Ok(Expr::Literal(LiteralExpr::Complex(Complex::new(0.0, 1.0)))),
+        );
+
+        assert_eq!(
+            parse("1.2j+1.j+1j"),
+            Ok(Expr::Binary(BinaryExpr {
+                lhs: Expr::Binary(BinaryExpr {
+                    lhs: Expr::Literal(LiteralExpr::Complex(Complex::new(0.0, 1.2))).into(),
+                    op: BinaryOp::Add,
+                    rhs: Expr::Literal(LiteralExpr::Complex(Complex::new(0.0, 1.0))).into(),
+                }).into(),
+                op: BinaryOp::Add,
+                rhs: Expr::Literal(LiteralExpr::Complex(Complex::new(0.0, 1.0))).into(),
+            }))
+        );
     }
 }

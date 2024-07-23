@@ -62,3 +62,11 @@ fn test_promote_generic(#[case] input: &'static [DataTypeOrCategory], #[case] ex
     let reversed: Vec<_> = input.into_iter().rev().copied().collect();
     assert_eq!(promote_types(&reversed), expected);
 }
+
+#[rstest]
+#[case(DataType::Complex128, DataTypeCategory::Floating, DataType::Complex128)]
+#[case(DataType::Int64, DataTypeCategory::Floating, DataType::Float64)]
+#[case(DataType::Int16, DataTypeCategory::Floating, DataType::Float32)]
+fn test_as_min_category(#[case] input: DataType, #[case] category: DataTypeCategory, #[case] expected: DataType) {
+    assert_eq!(input.as_min_category(category), expected);
+}
