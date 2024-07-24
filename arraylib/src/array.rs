@@ -8,7 +8,8 @@ use bytemuck::Pod;
 use itertools::Itertools;
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, Dimension, IxDyn, ShapeBuilder, ShapeError, ErrorKind, Zip, SliceInfoElem};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1};
+use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, IsClose, promote_types};
@@ -16,7 +17,6 @@ use crate::cast::Cast;
 use crate::error::ArrayError;
 use crate::colors::{magma, apply_cmap_u8};
 use crate::util::normalize_axis;
-use crate::log;
 
 pub struct DynArray {
     dtype: DataType,
@@ -558,7 +558,6 @@ impl PartialEq for DynArray {
 }
 impl Eq for DynArray {}
 
-
 macro_rules! cast_to_impl {
     ($arr:expr, $dtype:expr, $( ($ty:path, $fn:ident) ),* ) => {
         match $dtype  {
@@ -719,30 +718,10 @@ impl DynArray {
     }
 
     pub fn exp(&self) -> DynArray {
-        //log::log(format!("DynArray::exp(), dtype {}", self.dtype()));
         let s = self.cast_min_category(DataTypeCategory::Floating);
-        //log::log(format!("new dtype {}", self.dtype()));
-
-        /*
-        if let Some(arr) = s.downcast_ref::<Complex<f64>>() {
-            log::log("downcasted");
-            let arr = arr.clone();
-            let mut i = 0;
-            let arr = arr.mapv(|e| {
-                let Complex { re, im } = e;
-                log::log(format!("{}, re = {}, im = {}", i, re, im));
-                i += 1;
-                Complex::new(re.exp(), im)
-                //Complex::from_polar(re, im)
-            });
-            log::log("completed exp");
-            return arr.into()
-        }
-        */
-
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.mapv(|e| e.exp()).into() },
+            |ref s| { s.map(|e| e.exp()).into() },
         )
     }
 
@@ -750,7 +729,7 @@ impl DynArray {
         let s = self.cast_min_category(DataTypeCategory::Floating);
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.mapv(|e| e.sqrt()).into() },
+            |ref s| { s.map(|e| e.sqrt()).into() },
         )
     }
 

@@ -1,13 +1,11 @@
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::mem;
-use std::ops::Deref;
 use core::fmt;
 
 use ndarray::Array1;
 use serde::{Serialize, Deserialize, de, ser};
 use wasm_bindgen::prelude::*;
 
-use arraylib::log;
 use arraylib::array::DynArray;
 use arraylib::dtype::DataType;
 use arraylib::arraylike::{NestedList, ArrayValue};
@@ -289,68 +287,27 @@ pub enum JsCow<'a, T, U: AsRef<T>> {
     WasmRef(wasm_bindgen::__rt::Ref<'a, U>),
 }
 
-impl<'a, T: Clone, U: AsRef<T>> JsCow<'a, T, U> {
-    pub fn into_owned(self) -> T {
-        match self {
-            JsCow::Owned(val) => val,
-            JsCow::Borrowed(val) => val.clone(),
-            JsCow::WasmRef(val) => val.as_ref().clone(),
-        }
-    }
-
-    pub fn from_cow(cow: Cow<'a, T>) -> JsCow<'a, T, U> {
-        match cow {
-            Cow::Owned(val) => JsCow::Owned(val),
-            Cow::Borrowed(val) => JsCow::Borrowed(val),
-        }
-    }
-}
-
-impl<'a, T, U: AsRef<T>> AsRef<T> for JsCow<'a, T, U> {
-    #[inline]
-    fn as_ref(&self) -> &T {
-        match self {
-            JsCow::Owned(val) => val,
-            JsCow::Borrowed(val) => val,
-            JsCow::WasmRef(val) => val.deref().as_ref(),
-        }
-    }
-}
-
-impl<'a, T, U: AsRef<T>> Deref for JsCow<'a, T, U> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &T {
-        match self {
-            JsCow::Owned(val) => val,
-            JsCow::Borrowed(val) => val,
-            JsCow::WasmRef(val) => val.deref().as_ref(),
-        }
-    }
-}
-
-pub fn parse_array<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Option<JsCow<'a, DynArray, JsArray>> {
+pub fn parse_array<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Option<Cow<'a, DynArray>> {
     JsArray::downcast_ref(&arr).map(|val| {
         // SAFETY: `arr` is a JsArray borrowed for 'a, ensuring the underlying
         // array won't be dropped or mutated for at least that region
-        //let array_ref: &'a DynArray = unsafe { mem::transmute(&val.inner) };
+        let array_ref: &'a DynArray = unsafe { mem::transmute(&val.inner) };
         //mem::forget(val);
         //log::log(format!("parse_array got existing array {:?}, casting to {:?}", val.as_ref(), &dtype));
         match dtype {
-            Some(dtype) => JsCow::Owned(val.cast(dtype).into_owned()),
-            None => JsCow::WasmRef(val),
+            Some(dtype) => Cow::Owned(array_ref.cast(dtype).into_owned()),
+            None => Cow::Borrowed(array_ref),
         }
     })
 }
 
-pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<JsCow<'a, DynArray, JsArray>, String> {
+pub fn parse_arraylike<'a>(arr: &'a JsValue, dtype: Option<DataType>) -> Result<Cow<'a, DynArray>, String> {
     //log::log(format!("parse_arraylike({:?})", arr));
     if let Some(arr) = parse_array(arr, dtype) {
         return Ok(arr);
     }
 
-    parse_nestedlist(arr)?.build_array(dtype).map(JsCow::Owned)
+    parse_nestedlist(arr)?.build_array(dtype).map(Cow::Owned)
     //Err(format!("Array conversion not implemented for type '{}'", arr.js_typeof().as_string().unwrap()))
 }
 

@@ -24,21 +24,16 @@ test("maximum", () => {
     expect(np.nanmaximum([np.nan(), 2, 3], [2, np.nan(), 4])).arrayAlmostEqual(np.array([2, 2, 4], 'float64'));
 })
 
-test("exp", () => {
-    expect(np.exp(np.array([1, 2, -1, -5], 'float32'))).arrayAlmostEqual(
+test("test_exp", () => {
+    expect(np.exp_(np.array([1, 2, -1, -5], 'float32'))).arrayAlmostEqual(
         np.array([2.7182817, 7.389056, 0.36787945, 0.006737947], 'float32'),
     1e-6, 1e-8);
 
     let arr = np.array([0.0, 1.0, np.expr`pi*-1j`, np.expr`pi*1j`], 'complex64');
     let expected = np.array([1.0, 2.7182817, -1.0, -1.0], 'complex64');
 
-    expect(np.exp(arr)).arrayAlmostEqual(expected, 1e-8, 1e-7);
-    //expect(np.expr`exp(${arr}})`).arrayAlmostEqual(expected, 1e-8, 1e-7);
-})
-
-test("exp_expr", () => {
-    let arr = np.array([0., 0., 0., 0.], 'complex64');
-    np.expr`exp(${arr}})`;
+    expect(np.exp_(arr)).arrayAlmostEqual(expected, 1e-8, 1e-7);
+    expect(np.expr`exp(${arr})`).arrayAlmostEqual(expected, 1e-8, 1e-7);
 })
 
 test("trig", () => {

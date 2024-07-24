@@ -1,4 +1,4 @@
-#![feature(new_uninit, type_alias_impl_trait, lazy_cell)]
+#![feature(new_uninit, type_alias_impl_trait)]
 #![feature(iterator_try_collect)]
 #![feature(convert_float_to_int, float_minimum_maximum)]
 
