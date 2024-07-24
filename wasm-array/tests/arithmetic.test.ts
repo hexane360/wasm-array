@@ -37,9 +37,15 @@ test("exp", () => {
 })
 
 test("trig", () => {
-    let arr = np.array([0., 0., 0., 0.], 'float64');
-    np.expr`sin(${arr})`;
-    np.expr`cos(${arr})`;
+    let arr = np.array([0., np.expr`pi/2`, np.expr`2*pi`, 1.], 'float64');
+
+    let expected = np.array([0., 1., 0., 0.8414709848078965], 'float64');
+    expect(np.expr`sin(${arr})`).arrayAlmostEqual(expected, 1e-10, 1e-10);
+    expect(np.sin_(arr)).arrayAlmostEqual(expected, 1e-10, 1e-10);
+
+    expected = np.array([1., 0., 1., 0.54030230586], 'float64');
+    expect(np.expr`cos(${arr})`).arrayAlmostEqual(expected, 1e-10, 1e-10);
+    expect(np.cos_(arr)).arrayAlmostEqual(expected, 1e-10, 1e-10);
 })
 
 test("interp", () => {
