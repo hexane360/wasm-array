@@ -12,9 +12,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use ndarray::Array1;
 
-//use arraylib::log;
+use arraylib::log;
 use arraylib::bool::Bool;
-use arraylib::array::DynArray;
+use arraylib::array::{DynArray, self};
 use arraylib::dtype::DataType;
 use arraylib::{fft, reductions};
 
@@ -144,6 +144,18 @@ export function geomspace(start: number, end: number, n: number, dtype?: DataTyp
  * Construct an identity matrix of `ndim` dimensions, with dtype `dtype`.
  */
 export function eye(ndim: number, dtype?: DataTypeLike): NArray;
+
+/**
+ * 1D linear interpolation.
+ * Interpolates a set of values `xs` onto the piecewise line defined by `xp` and `yp`.
+ * 
+ * `xp` and `yp` must be 1D arrays. `xp` must be sorted and must not contain NaN values.
+ * `left` and `right` define values to return in the case of `xs` outside `xp`. They default to the
+ * first and last element of `yp` respectively.
+ * 
+ * Returns an array of the same shape as `xs`.
+ */
+export function interp(xs: ArrayLike, xp: ArrayLike, yp: ArrayLike, left?: number, right?: number): NArray;
 "##;
 
 // # wasm imports
@@ -926,6 +938,26 @@ pub fn allclose(arr1: &ArrayLike, arr2: &ArrayLike, rtol: Option<f64>, atol: Opt
     let arr1 = parse_arraylike(arr1, None)?;
     let arr2 = parse_arraylike(arr2, None)?;
     Ok(arr1.as_ref().allclose(arr2.as_ref(), rtol.unwrap_or(1e-8), atol.unwrap_or(0.0)))
+}
+
+// ## special functions
+
+#[wasm_bindgen(skip_typescript)]
+/// 1D linear interpolation.
+/// Interpolates a set of values `xs` onto the piecewise line defined by `xp` and `yp`.
+/// 
+/// `xp` and `yp` must be 1D arrays. `xp` must be sorted and must not contain NaN values.
+/// `left` and `right` define values to return in the case of `xs` outside `xp`. They default to the
+/// first and last element of `yp` respectively.
+/// 
+/// Returns an array of the same shape as `xs`.
+pub fn interp(xs: &ArrayLike, xp: &ArrayLike, yp: &ArrayLike, left: Option<f64>, right: Option<f64>) -> Result<JsArray, String> {
+    log::subscribe(Box::new(error));
+
+    let xs = parse_arraylike(xs, None)?;
+    let xp = parse_arraylike(xp, None)?;
+    let yp = parse_arraylike(yp, None)?;
+    array::interp(xs.as_ref(), xp.as_ref(), yp.as_ref(), left, right).map(|arr| arr.into())
 }
 
 // ## from_interchange

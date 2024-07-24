@@ -8,7 +8,8 @@ use bytemuck::Pod;
 use itertools::Itertools;
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1};
+use ordered_float::NotNan;
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayViewD};
 use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
@@ -644,6 +645,103 @@ pub(crate) fn roll_inner<T: PhysicalType>(arr: &ArrayD<T>, ax_rolls: &[isize]) -
     }
 }
 
+fn as_not_nan<'a, T: ordered_float::FloatCore>(slice: &'a [T]) -> Option<&'a [NotNan<T>]> {
+    if slice.iter().all(|v| !v.is_nan()) {
+        unsafe { Some(std::mem::transmute(slice)) }
+    } else {
+        None
+    }
+}
+
+pub fn interp(xs: &'_ DynArray, xp: &'_ DynArray, yp: &'_ DynArray, left: Option<f64>, right: Option<f64>) -> Result<DynArray, String> {
+    let dtype = promote_types(&[xs.dtype(), xp.dtype(), yp.dtype()]).as_min_category(DataTypeCategory::Floating);
+
+    if xp.ndim() != 1 || yp.ndim() != 1 || xp.size() != yp.size() {
+        return Err("'xp' and 'yp' must be 1D arrays of the same length".to_owned());
+    }
+    if xp.size() < 2 || yp.size() < 2 {
+        return Err("Expected at least two coordinates to interpolate".to_owned());
+    }
+
+    let (xs, xp, yp) = (xs.cast(dtype), xp.cast(dtype), yp.cast(dtype));
+
+    type_dispatch!(
+        (f32,),
+        |ref xs, ref xp, ref yp| {
+            interp_inner(
+                xs.view(), xp.view().into_dimensionality().unwrap(), yp.view().into_dimensionality().unwrap(),
+                left.map(|v| v as f32), right.map(|v| v as f32)
+            ).map(|arr| arr.into())
+        },
+        (f64,),
+        |ref xs, ref xp, ref yp| {
+            interp_inner(
+                xs.view(), xp.view().into_dimensionality().unwrap(), yp.view().into_dimensionality().unwrap(),
+                left, right
+            ).map(|arr| arr.into())
+        },
+    )
+}
+
+fn interp_inner<T: PhysicalType + ordered_float::FloatCore + std::fmt::Debug>(xs: ArrayViewD<'_, T>, xp: ArrayView1<'_, T>, yp: ArrayView1<'_, T>, left: Option<T>, right: Option<T>) -> Result<ArrayD<T>, String> {
+    // we've already checked that xp and yp are the same length and len >2
+    // get slices of fp and xp in standard order
+    let xp_store: Vec<T>;
+    let xp = if let Some(s) = xp.as_slice() {
+        s
+    } else {
+        xp_store = xp.iter().copied().collect();
+        xp_store.as_slice()
+    };
+    let xp = as_not_nan(xp).ok_or_else(|| "'xp' must not contain NaN values".to_owned())?;
+
+    let yp_store: Vec<T>;
+    let yp = if let Some(s) = yp.as_slice() {
+        s
+    } else {
+        yp_store = yp.iter().copied().collect();
+        yp_store.as_slice()
+    };
+
+    // SAFETY: we've checked the size of xp and fp
+    let (x_left, x_right) = unsafe { (xp.get_unchecked(0).into_inner(), xp.get_unchecked(xp.len() - 1).into_inner()) };
+    let (y_left, y_right) = unsafe { (left.unwrap_or(*yp.get_unchecked(0)), right.unwrap_or(*yp.get_unchecked(yp.len() - 1))) };
+
+    let n_xs: usize = xs.shape().iter().product();
+
+    let slopes: Option<Array1<T>> = if n_xs >= xp.len() { Some(
+        (0..xp.len() - 1).map(|i|
+            // SAFETY: xp and fp are the same length, and we only index at max len-1
+            unsafe { (*yp.get_unchecked(i+1) - *yp.get_unchecked(i)) / (xp.get_unchecked(i+1).into_inner() - xp.get_unchecked(i).into_inner()) }
+        ).collect()
+    )} else { None };
+
+    Ok(xs.mapv(|x| {
+        if x <= x_left { y_left }
+        else if x >= x_right { y_right }
+        else if x.is_nan() { x }
+        else {
+            //binary search
+            // SAFETY: we checked x is not NaN
+            match xp.binary_search(unsafe { &NotNan::new_unchecked(x) }) {
+                Ok(j) => {
+                    // exact match
+                    yp[j]
+                },
+                Err(j) => {
+                    // interpolate between j-1 and j
+                    let slope = if let Some(slopes) = &slopes {
+                        slopes[j-1]
+                    } else {
+                        (yp[j] - yp[j-1]) / (xp[j].into_inner() - xp[j-1].into_inner())
+                    };
+                    (x - xp[j-1].into_inner()) * slope + yp[j-1]
+                }
+            }
+        }
+    }))
+}
+
 impl DynArray {
     pub fn cast<'a>(&'a self, dtype: DataType) -> Cow<'a, DynArray> {
         let init_dtype = self.dtype();
@@ -1155,7 +1253,6 @@ impl fmt::UpperExp for DynArray {
         )
     }
 }
-
 
 impl fmt::LowerHex for DynArray {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
