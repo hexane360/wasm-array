@@ -5,11 +5,11 @@ use std::fmt;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use bytemuck::Pod;
-use itertools::Itertools;
+use itertools::{Itertools, izip};
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
 use ordered_float::NotNan;
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayViewD};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayViewD, Axis};
 use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
@@ -645,6 +645,71 @@ pub(crate) fn roll_inner<T: PhysicalType>(arr: &ArrayD<T>, ax_rolls: &[isize]) -
     }
 }
 
+pub fn stack<'a, I: IntoIterator<Item = &'a DynArray>>(arrs: I, axis: isize) -> Result<DynArray, String> {
+    let arrs = arrs.into_iter().collect_vec();
+
+    let dtypes: Vec<_> = arrs.iter().map(|arr| arr.dtype()).collect();
+    let dtype = promote_types(dtypes.as_slice());
+
+    let ax = normalize_axis(axis, arrs[0].ndim() + 1);
+
+    let arrs: Vec<_> = arrs.into_iter().map(|arr| arr.cast(dtype)).collect();
+    match dtype {
+        DataType::Boolean => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<Bool>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Int8 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<i8>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Int16 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<i16>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Int32 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<i32>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Int64 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<i64>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::UInt8 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<u8>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::UInt16 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<u16>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::UInt32 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<u32>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::UInt64 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<u64>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Float32 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<f32>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Float64 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<f64>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Complex64 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<Complex<f32>>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+        DataType::Complex128 => {
+            let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<Complex<f64>>().unwrap().view()).collect();
+            ndarray::stack(Axis(ax), v.as_slice()).map(|arr| arr.into())
+        },
+    }.map_err(|e| format!("{}", e))
+}
+
 fn as_not_nan<'a, T: ordered_float::FloatCore>(slice: &'a [T]) -> Option<&'a [NotNan<T>]> {
     if slice.iter().all(|v| !v.is_nan()) {
         unsafe { Some(std::mem::transmute(slice)) }
@@ -654,7 +719,12 @@ fn as_not_nan<'a, T: ordered_float::FloatCore>(slice: &'a [T]) -> Option<&'a [No
 }
 
 pub fn interp(xs: &'_ DynArray, xp: &'_ DynArray, yp: &'_ DynArray, left: Option<f64>, right: Option<f64>) -> Result<DynArray, String> {
-    let dtype = promote_types(&[xs.dtype(), xp.dtype(), yp.dtype()]).as_min_category(DataTypeCategory::Floating);
+    let dtype = promote_types(&[xs.dtype(), xp.dtype(), yp.dtype().real_dtype()]).as_min_category(DataTypeCategory::Floating);
+    let y_complex = yp.dtype().category() == DataTypeCategory::Complex;
+
+    if xp.dtype().category() == DataTypeCategory::Complex {
+        return Err("'xs' and 'xp' must not be complex".to_owned());
+    }
 
     if xp.ndim() != 1 || yp.ndim() != 1 || xp.size() != yp.size() {
         return Err("'xp' and 'yp' must be 1D arrays of the same length".to_owned());
@@ -663,27 +733,41 @@ pub fn interp(xs: &'_ DynArray, xp: &'_ DynArray, yp: &'_ DynArray, left: Option
         return Err("Expected at least two coordinates to interpolate".to_owned());
     }
 
-    let (xs, xp, yp) = (xs.cast(dtype), xp.cast(dtype), yp.cast(dtype));
+    let (xs, xp, yp) = (xs.cast(dtype), xp.cast(dtype), if y_complex { Cow::Borrowed(yp) } else { yp.cast(dtype) });
 
     type_dispatch!(
         (f32,),
-        |ref xs, ref xp, ref yp| {
-            interp_inner(
-                xs.view(), xp.view().into_dimensionality().unwrap(), yp.view().into_dimensionality().unwrap(),
-                left.map(|v| v as f32), right.map(|v| v as f32)
-            ).map(|arr| arr.into())
+        |ref xs, ref xp| {
+            if y_complex {
+                interp_inner(
+                    xs.view(), xp.view().into_dimensionality().unwrap(), yp.downcast_ref::<Complex<f32>>().unwrap().view().into_dimensionality().unwrap(),
+                    left.map(|v| Complex::<f32>::from(v as f32)), right.map(|v| Complex::<f32>::from(v as f32))
+                ).map(|arr| arr.into())
+            } else {
+                interp_inner(
+                    xs.view(), xp.view().into_dimensionality().unwrap(), yp.downcast_ref::<f32>().unwrap().view().into_dimensionality().unwrap(),
+                    left.map(|v| v as f32), right.map(|v| v as f32)
+                ).map(|arr| arr.into())
+            }
         },
         (f64,),
-        |ref xs, ref xp, ref yp| {
-            interp_inner(
-                xs.view(), xp.view().into_dimensionality().unwrap(), yp.view().into_dimensionality().unwrap(),
-                left, right
-            ).map(|arr| arr.into())
+        |ref xs, ref xp| {
+            if y_complex {
+                interp_inner(
+                    xs.view(), xp.view().into_dimensionality().unwrap(), yp.downcast_ref::<Complex<f64>>().unwrap().view().into_dimensionality().unwrap(),
+                    left.map(Complex::<f64>::from), right.map(Complex::<f64>::from)
+                ).map(|arr| arr.into())
+            } else {
+                interp_inner(
+                    xs.view(), xp.view().into_dimensionality().unwrap(), yp.downcast_ref::<f64>().unwrap().view().into_dimensionality().unwrap(),
+                    left.map(|v| v as f64), right.map(|v| v as f64)
+                ).map(|arr| arr.into())
+            }
         },
     )
 }
 
-fn interp_inner<T: PhysicalType + ordered_float::FloatCore + std::fmt::Debug>(xs: ArrayViewD<'_, T>, xp: ArrayView1<'_, T>, yp: ArrayView1<'_, T>, left: Option<T>, right: Option<T>) -> Result<ArrayD<T>, String> {
+fn interp_inner<T: PhysicalType + ordered_float::FloatCore + Into<U>, U: PhysicalType + ComplexFloat>(xs: ArrayViewD<'_, T>, xp: ArrayView1<'_, T>, yp: ArrayView1<'_, U>, left: Option<U>, right: Option<U>) -> Result<ArrayD<U>, String> {
     // we've already checked that xp and yp are the same length and len >2
     // get slices of fp and xp in standard order
     let xp_store: Vec<T>;
@@ -695,7 +779,7 @@ fn interp_inner<T: PhysicalType + ordered_float::FloatCore + std::fmt::Debug>(xs
     };
     let xp = as_not_nan(xp).ok_or_else(|| "'xp' must not contain NaN values".to_owned())?;
 
-    let yp_store: Vec<T>;
+    let yp_store: Vec<U>;
     let yp = if let Some(s) = yp.as_slice() {
         s
     } else {
@@ -709,17 +793,17 @@ fn interp_inner<T: PhysicalType + ordered_float::FloatCore + std::fmt::Debug>(xs
 
     let n_xs: usize = xs.shape().iter().product();
 
-    let slopes: Option<Array1<T>> = if n_xs >= xp.len() { Some(
+    let slopes: Option<Array1<U>> = if n_xs >= xp.len() { Some(
         (0..xp.len() - 1).map(|i|
             // SAFETY: xp and fp are the same length, and we only index at max len-1
-            unsafe { (*yp.get_unchecked(i+1) - *yp.get_unchecked(i)) / (xp.get_unchecked(i+1).into_inner() - xp.get_unchecked(i).into_inner()) }
+            unsafe { (*yp.get_unchecked(i+1) - *yp.get_unchecked(i)) / (xp.get_unchecked(i+1).into_inner() - xp.get_unchecked(i).into_inner()).into() }
         ).collect()
     )} else { None };
 
     Ok(xs.mapv(|x| {
         if x <= x_left { y_left }
         else if x >= x_right { y_right }
-        else if x.is_nan() { x }
+        else if x.is_nan() { x.into() }
         else {
             //binary search
             // SAFETY: we checked x is not NaN
@@ -733,13 +817,149 @@ fn interp_inner<T: PhysicalType + ordered_float::FloatCore + std::fmt::Debug>(xs
                     let slope = if let Some(slopes) = &slopes {
                         slopes[j-1]
                     } else {
-                        (yp[j] - yp[j-1]) / (xp[j].into_inner() - xp[j-1].into_inner())
+                        (yp[j] - yp[j-1]) / (xp[j].into_inner() - xp[j-1].into_inner()).into()
                     };
-                    (x - xp[j-1].into_inner()) * slope + yp[j-1]
+                    (x - xp[j-1].into_inner()).into() * slope + yp[j-1]
                 }
             }
         }
     }))
+}
+
+pub fn interpn(coords: &[&'_ DynArray], values: &'_ DynArray, xs: &'_ DynArray, fill: Option<f64>) -> Result<DynArray, String> {
+    let mut dtypes: Vec<DataType> = coords.iter().map(|arr| arr.dtype()).collect();
+    dtypes.push(values.dtype().real_dtype());
+    dtypes.push(xs.dtype());
+    let dtype = promote_types(dtypes.as_slice()).as_min_category(DataTypeCategory::Floating);
+    if dtype.category() == DataTypeCategory::Complex {
+        return Err("'coords' and 'xs' must not be complex".to_owned());
+    }
+    let values_complex = values.dtype().category() == DataTypeCategory::Complex;
+
+    let expected_values_shape: Vec<usize> = coords.iter().map(|coords| {
+        if coords.ndim() != 1 {
+            Err("'coords' must be a list of 1D arrays".to_owned())
+        } else {
+            Ok(coords.size())
+        }
+    }).try_collect()?;
+
+    if values.shape() != expected_values_shape {
+        return Err(format!("'values' must match the shape of 'coords': {:?}", expected_values_shape.as_slice()));
+    }
+
+    if xs.ndim() < 1 || xs.shape()[xs.ndim() - 1] != coords.len() {
+        return Err(format!("'xs' must be an array of shape [..., {}]", coords.len()));
+    }
+
+    //let (xs, xp, yp) = (xs.cast(dtype), xp.cast(dtype), if y_complex { Cow::Borrowed(yp) } else { yp.cast(dtype) });
+    let coords: Vec<_> = coords.into_iter().map(|arr| arr.cast(dtype)).collect();
+    let (values, xs) = (values.cast(dtype), xs.cast(dtype));
+
+    match dtype {
+        DataType::Float32 => {
+            if values_complex {
+                interpn_inner(
+                    coords.iter().map(|coords| coords.downcast_ref::<f32>().unwrap().view().into_dimensionality().unwrap()).collect(),
+                    values.downcast_ref::<Complex<f32>>().unwrap().view(),
+                    xs.downcast_ref::<f32>().unwrap().view(),
+                    fill.map(|val| (val as f32).into()),
+                ).map(|arr| arr.into())
+            } else {
+                interpn_inner(
+                    coords.iter().map(|coords| coords.downcast_ref::<f32>().unwrap().view().into_dimensionality().unwrap()).collect(),
+                    values.downcast_ref::<f32>().unwrap().view(),
+                    xs.downcast_ref::<f32>().unwrap().view(),
+                    fill.map(|val| val as f32),
+                ).map(|arr| arr.into())
+            }
+        },
+        DataType::Float64 => {
+            if values_complex {
+                interpn_inner(
+                    coords.iter().map(|coords| coords.downcast_ref::<f64>().unwrap().view().into_dimensionality().unwrap()).collect(),
+                    values.downcast_ref::<Complex<f64>>().unwrap().view(),
+                    xs.downcast_ref::<f64>().unwrap().view(),
+                    fill.map(|val| (val as f64).into()),
+                ).map(|arr| arr.into())
+            } else {
+                interpn_inner(
+                    coords.iter().map(|coords| coords.downcast_ref::<f64>().unwrap().view().into_dimensionality().unwrap()).collect(),
+                    values.downcast_ref::<f64>().unwrap().view(),
+                    xs.downcast_ref::<f64>().unwrap().view(),
+                    fill.map(|val| val as f64),
+                ).map(|arr| arr.into())
+            }
+        },
+        _ => unreachable!()
+    }
+}
+
+fn interpn_inner<T, U>(coords: Vec<ArrayView1<'_, T>>, values: ArrayViewD<'_, U>, xs: ArrayViewD<'_, T>, fill: Option<U>) -> Result<ArrayD<U>, String>
+where T: PhysicalType + Float + Into<U> + std::iter::Product + std::fmt::Debug,
+      U: PhysicalType + ComplexFloat + std::fmt::Debug
+{
+    let coords: Vec<Cow<'_, [T]>> = coords.iter().map(|a| {
+        if let Some(s) = a.as_slice() { Cow::Borrowed(s) } else {
+            Cow::Owned(a.iter().copied().collect::<Vec<_>>())
+        }
+    }).collect();
+
+    if xs.ndim() == 0 || xs.shape()[xs.ndim() - 1] != coords.len() {
+        return Err(format!("'xs' must be an array of shape [..., {}]", coords.len()));
+    }
+
+    let mut filled = false;
+    let dim_ax: Axis = Axis(xs.ndim() - 1);
+
+    let fill_val = fill.unwrap_or(U::zero());
+
+    let result = xs.map_axis(dim_ax, |x_vals| {
+        let mut idxs: Vec<usize> = Vec::with_capacity(x_vals.len());
+        for (coords, &x_val) in coords.iter().zip(x_vals) {
+            //log::log(format!("looking for {:?} in coords {:?}", x_val, coords));
+            if x_val < *coords.first().unwrap() || x_val >= *coords.last().unwrap() {
+                if x_val == *coords.last().unwrap() {
+                    idxs.push(coords.len() - 2);
+                } else {
+                    filled = true;
+                    return fill_val;
+                }
+            } else if x_val.is_nan() {
+                return U::from(T::nan()).unwrap();
+            } else {
+                idxs.push(coords.partition_point(|&v| v < x_val) - 1);
+            }
+        }
+
+        //log::log(format!("idxs: {:?}", &idxs));
+
+        let coord_diffs: Vec<(T, T)> = izip!(&coords, &idxs, x_vals)
+            .map(|(coords, &i, &x)| (coords[i+1] - x, x - coords[i])).collect();
+
+        //log::log(format!("coord_diffs: {:?}", &coord_diffs));
+
+        let mut out: U = U::zero();
+        let mut weights: T = T::zero();
+
+        for idx_diffs in idxs.iter().map(|_| [0, 1].into_iter()).multi_cartesian_product() {
+            let val: U = values[idxs.iter().zip(&idx_diffs).map(|(i, d)| i + d).collect_vec().as_slice()];
+
+            let weight: T = idx_diffs.iter().zip(&coord_diffs).map(|(&i, d)| if i == 0 { d.0 } else { d.1 }).product();
+            //log::log(format!("val: {:?} weight: {:?}", val, weight));
+            weights = weights + weight;
+            out = out + val * weight.into();
+        }
+        out / weights.into()
+    });
+
+    if let None = fill {
+        if filled {
+            return Err("Out-of-bounds points and no fill value specified".to_owned());
+        }
+    }
+
+    Ok(result)
 }
 
 impl DynArray {

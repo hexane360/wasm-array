@@ -54,3 +54,18 @@ test("meshgrid", () => {
         np.meshgrid([[1, 2], [2, 4]], [2, 4, 8])
     }).toThrowError("'meshgrid' requires 1D input arrays");
 })
+
+test("stack", () => {
+    const x = np.array([[1, 2], [3, 4]]);
+    const y = np.array([[5, 6], [7, 8]]);
+
+    expect(np.stack([x, y], -1)).arrayEqual([
+        [[1, 5], [2, 6]],
+        [[3, 7], [4, 8]],
+    ]);
+
+    expect(np.stack([x, y])).arrayEqual([
+        [[1, 2], [3, 4]],
+        [[5, 6], [7, 8]],
+    ]);
+})

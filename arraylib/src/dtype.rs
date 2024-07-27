@@ -394,6 +394,22 @@ impl DataType {
             DataType::Complex128 => size_of::<Complex<f64>>(),
         }
     }
+
+    pub fn real_dtype(self) -> DataType {
+        match self {
+            DataType::Complex64 => DataType::Float32,
+            DataType::Complex128 => DataType::Float64,
+            dtype => dtype
+        }
+    }
+
+    pub fn complex_dtype(self) -> DataType {
+        match self.as_min_category(DataTypeCategory::Floating) {
+            DataType::Complex64 | DataType::Float32 => DataType::Complex64,
+            DataType::Complex128 | DataType::Float64 => DataType::Complex128,
+            _ => unreachable!()
+        }
+    }
 }
 
 pub trait IsClose<InnerT> where InnerT: num::Float {

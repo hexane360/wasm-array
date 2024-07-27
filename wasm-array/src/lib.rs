@@ -12,7 +12,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 use ndarray::Array1;
 
-use arraylib::log;
 use arraylib::bool::Bool;
 use arraylib::array::{DynArray, self};
 use arraylib::dtype::DataType;
@@ -156,6 +155,19 @@ export function eye(ndim: number, dtype?: DataTypeLike): NArray;
  * Returns an array of the same shape as `xs`.
  */
 export function interp(xs: ArrayLike, xp: ArrayLike, yp: ArrayLike, left?: number, right?: number): NArray;
+
+/**
+ * N-dimensional linear interpolation.
+ * Interpolates a set of values `xs` onto the surface defined by coordinates `coords` and
+ * values `values`.
+ * 
+ * `coords` must be a list of 1D arrays, sorted and without NaN values.
+ * `values` must be an array of shape `[coords[0].size(), coords[1].size(), ..., coords[N-1].size()]`
+ * `xs` is an array of points to interpolate at, with the last axis corresponding to the dimensions of `coords`.
+ * 
+ * Returns an array of shape `xs.shape[:-1]`.
+ */
+export function interpn(coords: ReadonlyArray<ArrayLike>, values: ArrayLike, xs: ArrayLike, fill?: number): NArray;
 "##;
 
 // # wasm imports
@@ -165,7 +177,7 @@ extern "C" {
     //#[wasm_bindgen(js_namespace = console)]
     //fn log(s: &str);
     #[wasm_bindgen(js_namespace = console)]
-    fn error(s: &str);
+    fn log(s: &str);
 
     #[wasm_bindgen(typescript_type = "IArrayInterchange")]
     pub type IArrayInterchange;
@@ -540,6 +552,16 @@ pub fn meshgrid(arrs: &JsValue) -> Result<Vec<JsArray>, String> {
     let arrs: Vec<_> = arrs.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
 
     DynArray::meshgrid(arrs, false).map(|v| v.into_iter().map(|arr| arr.into()).collect())
+}
+
+#[wasm_bindgen]
+/// Stack arrays together along a new axis
+pub fn stack(arrs: &JsValue, axis: Option<isize>) -> Result<JsArray, String> {
+    let arrs_arr: Vec<_> = arrs.dyn_ref::<js_sys::Array>().ok_or_else(|| "'arrs' must be an array of arrays".to_owned())?
+        .iter().collect();
+    let arrs: Vec<_> = arrs_arr.iter().map(|arr| parse_arraylike(&arr, None)).try_collect()?;
+
+    array::stack(arrs.iter().map(|arr| arr.as_ref()), axis.unwrap_or(0)).map(|arr| arr.into())
 }
 
 // ## elementwise functions
@@ -952,12 +974,22 @@ pub fn allclose(arr1: &ArrayLike, arr2: &ArrayLike, rtol: Option<f64>, atol: Opt
 /// 
 /// Returns an array of the same shape as `xs`.
 pub fn interp(xs: &ArrayLike, xp: &ArrayLike, yp: &ArrayLike, left: Option<f64>, right: Option<f64>) -> Result<JsArray, String> {
-    log::subscribe(Box::new(error));
-
     let xs = parse_arraylike(xs, None)?;
     let xp = parse_arraylike(xp, None)?;
     let yp = parse_arraylike(yp, None)?;
     array::interp(xs.as_ref(), xp.as_ref(), yp.as_ref(), left, right).map(|arr| arr.into())
+}
+
+#[wasm_bindgen]
+pub fn interpn(coords: &JsValue, values: &ArrayLike, xs: &ArrayLike, fill: Option<f64>) -> Result<JsArray, String> {
+    let coords_arr: Vec<_> = coords.dyn_ref::<js_sys::Array>().ok_or_else(|| "'coords' must be an array of 1D coordinate arrays".to_owned())?
+        .iter().collect();
+    let coords: Vec<_> = coords_arr.iter().map(|arr| parse_arraylike(&arr, None)).try_collect()?;
+
+    let values = parse_arraylike(values, None)?;
+    let xs = parse_arraylike(xs, None)?;
+
+    array::interpn(&coords.iter().map(|arr| arr.as_ref()).collect::<Vec<_>>(), &values, &xs, fill).map(|arr| arr.into())
 }
 
 // ## from_interchange
