@@ -248,12 +248,12 @@ impl DynArray {
         )
     }
 
-    pub fn broadcast_to<Sh: ShapeBuilder<Dim = IxDyn>>(self, shape: Sh) -> Result<DynArray, ShapeError> {
+    pub fn broadcast_to<Sh: ShapeBuilder<Dim = IxDyn>>(&self, shape: Sh) -> Result<DynArray, ShapeError> {
         // TODO because this 
         let s = self;
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
-            |s| {
+            |ref s| {
                 Ok(s.broadcast(shape.into_shape().raw_dim().clone()).ok_or_else(|| ShapeError::from_kind(ErrorKind::IncompatibleShape))?.to_owned().into())
             }
         )
@@ -322,6 +322,69 @@ fn align_and_cast_buf<T: bytemuck::Pod, U: bytemuck::NoUninit + bytemuck::AnyBit
         Err((_, buf)) => buf,
     };
     bytemuck::pod_collect_to_vec(&buf)
+}
+
+fn broadcast_err(shapes: &[&[usize]]) -> String {
+    use fmt::Write;
+
+    let mut buf: String = "Unable to broadcast shapes ".to_owned();
+    assert!(shapes.len() >= 2);
+    for (i, shape) in shapes.iter().enumerate() {
+        if i == shapes.len() - 1 {
+            write!(&mut buf, "and {:?}", shape).unwrap();
+        } else if shapes.len() > 2 {
+            write!(&mut buf, "{:?}, ", shape).unwrap();
+        } else {
+            write!(&mut buf, "{:?} ", shape).unwrap();
+        }
+    }
+    buf
+}
+
+pub fn broadcast_shapes(shapes: &[&[usize]]) -> Result<Vec<usize>, String> {
+    let mut out_shape: Vec<usize> = Vec::new();
+
+    let mut iters: Vec<_> = shapes.iter().map(|sh| sh.iter().rev()).collect();
+
+    'dim: loop {
+        let mut shapes_iter = iters.iter_mut();
+
+        let mut len = loop {
+            match shapes_iter.next() {
+                Some(it) => match it.next() {
+                    None => continue,
+                    Some(&val) => break val,
+                },
+                None => break 'dim,
+            }
+        };
+
+        for it in shapes_iter {
+            match it.next() {
+                None | Some(1) => (),
+                Some(&v) => if v != len {
+                    if len == 1 {
+                        len = v;
+                    } else {
+                        return Err(broadcast_err(shapes));
+                    }
+                }
+            }
+        }
+
+        out_shape.push(len);
+    }
+
+    out_shape.reverse();
+    Ok(out_shape)
+}
+
+pub fn broadcast_arrays(arrs: &[&DynArray]) -> Result<Vec<DynArray>, String> {
+    let shapes: Vec<&[usize]> = arrs.iter().map(|arr| arr.shape.as_slice()).collect();
+
+    let shape = broadcast_shapes(&shapes)?;
+
+    Ok(arrs.iter().map(|arr| arr.broadcast_to(shape.as_slice()).unwrap()).collect())
 }
 
 pub(crate) fn co_broadcast<D1, D2, Output>(shape1: &D1, shape2: &D2) -> Result<Output, ShapeError>
@@ -654,6 +717,7 @@ pub fn stack<'a, I: IntoIterator<Item = &'a DynArray>>(arrs: I, axis: isize) -> 
     let ax = normalize_axis(axis, arrs[0].ndim() + 1);
 
     let arrs: Vec<_> = arrs.into_iter().map(|arr| arr.cast(dtype)).collect();
+
     match dtype {
         DataType::Boolean => {
             let v: Vec<_> = arrs.iter().map(|arr| arr.downcast_ref::<Bool>().unwrap().view()).collect();

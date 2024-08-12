@@ -168,6 +168,16 @@ export function interp(xs: ArrayLike, xp: ArrayLike, yp: ArrayLike, left?: numbe
  * Returns an array of shape `xs.shape[:-1]`.
  */
 export function interpn(coords: ReadonlyArray<ArrayLike>, values: ArrayLike, xs: ArrayLike, fill?: number): NArray;
+
+/**
+ * Broadcast arrays together
+ */
+export function broadcast_arrays(...arrs: ReadonlyArray<ArrayLike>): Array<NArray>;
+
+/**
+ * Broadcast shapes together
+ */
+export function broadcast_shapes(...shapes: ReadonlyArray<ShapeLike>): Array<number>;
 "##;
 
 // # wasm imports
@@ -548,8 +558,9 @@ pub fn ravel(arr: &ArrayLike) -> Result<JsArray, String> {
 
 #[wasm_bindgen(variadic, skip_typescript)]
 pub fn meshgrid(arrs: &JsValue) -> Result<Vec<JsArray>, String> {
-    let arrs = arrs.clone().dyn_into::<js_sys::Array>().map_err(|_| "'arrs' must be an array".to_owned())?;
-    let arrs: Vec<_> = arrs.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
+    let arrs_arr: Vec<_> = arrs.dyn_ref::<js_sys::Array>().ok_or_else(|| "'arrs' must be an array of arrays".to_owned())?
+        .iter().collect();
+    let arrs: Vec<_> = arrs_arr.iter().map(|val| parse_arraylike(&val, None).map(|v| v.into_owned())).try_collect()?;
 
     DynArray::meshgrid(arrs, false).map(|v| v.into_iter().map(|arr| arr.into()).collect())
 }
@@ -562,6 +573,39 @@ pub fn stack(arrs: &JsValue, axis: Option<isize>) -> Result<JsArray, String> {
     let arrs: Vec<_> = arrs_arr.iter().map(|arr| parse_arraylike(&arr, None)).try_collect()?;
 
     array::stack(arrs.iter().map(|arr| arr.as_ref()), axis.unwrap_or(0)).map(|arr| arr.into())
+}
+
+#[wasm_bindgen]
+/// Broadcast an array to the given shape
+pub fn broadcast_to(array: &ArrayLike, shape: ShapeLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(array, None)?.into_owned();
+    let shape: Vec<usize> = TryInto::<Box<[usize]>>::try_into(shape)?.into();
+
+    arr.broadcast_to(shape).map(|arr| arr.into()).map_err(|err| err.to_string())
+}
+
+
+
+#[wasm_bindgen(variadic, skip_typescript)]
+/// Broadcast arrays together
+pub fn broadcast_arrays(arrs: &JsValue) -> Result<Vec<JsArray>, String> {
+    let arrs_arr: Vec<_> = arrs.dyn_ref::<js_sys::Array>().ok_or_else(|| "'arrs' must be an array of arrays".to_owned())?
+        .iter().collect();
+    let arrs: Vec<_> = arrs_arr.iter().map(|val| parse_arraylike(&val, None)).try_collect()?;
+    let arr_refs: Vec<_> = arrs.iter().map(|arr| arr.as_ref()).collect();
+
+    array::broadcast_arrays(&arr_refs).map(|arrs| arrs.into_iter().map(|arr| arr.into()).collect())
+}
+
+#[wasm_bindgen(variadic, skip_typescript)]
+/// Broadcast shapes together
+pub fn broadcast_shapes(arrs: &JsValue) -> Result<js_sys::Array, String> {
+    let shapes: Vec<_> = arrs.dyn_ref::<js_sys::Array>().ok_or_else(|| "'shapes' must be an array of shapes".to_owned())?
+        .iter().collect();
+    let shapes: Vec<Box<[usize]>> = shapes.into_iter().map(|sh| ShapeLike::unchecked_from_js(sh).try_into()).try_collect()?;
+    let shape_refs: Vec<&[usize]> = shapes.iter().map(|sh| &sh[..]).collect();
+
+    array::broadcast_shapes(&shape_refs).map(|sh| sh.into_iter().map(|x| JsValue::from_f64(x as f64)).collect())
 }
 
 // ## elementwise functions

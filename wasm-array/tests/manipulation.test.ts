@@ -69,3 +69,23 @@ test("stack", () => {
         [[5, 6], [7, 8]],
     ]);
 })
+
+test("broadcast_shapes", () => {
+    expect(np.broadcast_shapes()).toEqual([]);
+    expect(np.broadcast_shapes([], [], [])).toEqual([]);
+    expect(np.broadcast_shapes([1, 2, 3], [5, 1, 1], [])).toEqual([5, 2, 3]);
+
+    expect(() => np.broadcast_shapes([1, 2, 3], [1, 1, 4])).toThrowError("Unable to broadcast shapes [1, 2, 3] and [1, 1, 4]");
+    expect(() => np.broadcast_shapes([1, 2, 3], [1], [1, 1, 4])).toThrowError("Unable to broadcast shapes [1, 2, 3], [1], and [1, 1, 4]");
+})
+
+test("broadcast_to", () => {
+    expect(np.broadcast_to([1, 2, 3, 4], [1, 1, 4])).arrayEqual([[[1, 2, 3, 4]]]);
+})
+
+test("broadcast_arrays", () => {
+    const [arr1, arr2] = np.broadcast_arrays([[1, 2, 3, 4]], [[4], [3], [2], [1]]);
+
+    expect(arr1).arrayEqual([[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]]);
+    expect(arr2).arrayEqual([[4, 4, 4, 4], [3, 3, 3, 3], [2, 2, 2, 2], [1, 1, 1, 1]]);
+})
