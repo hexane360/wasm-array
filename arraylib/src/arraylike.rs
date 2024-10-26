@@ -110,7 +110,7 @@ impl ArrayValue {
     }
 
     pub fn from_arr(arr: &DynArray) -> Option<ArrayValue> {
-        if arr.shape().len() > 0 {
+        if arr.ndim() > 0 {
             None
         } else {
             use crate::cast::Cast;

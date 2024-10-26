@@ -8,6 +8,7 @@ members = [
 ]
 
 [workspace.dependencies]
+arraylib_macro = { path = "../arraylib_macro" }
 bytemuck = { version = "1.16.0", features = ["extern_crate_std", "derive", "min_const_generics", "zeroable_maybe_uninit"] }
 ndarray = "0.15.6"
 num = "0.4.3"

@@ -2,12 +2,14 @@ use std::borrow::Cow;
 use std::mem;
 use core::fmt;
 
-use ndarray::Array1;
+use arraylib::bool::Bool;
+use ndarray::{Array1, ArrayViewD};
 use serde::{Serialize, Deserialize, de, ser};
 use wasm_bindgen::prelude::*;
+use base64::engine::{Engine, general_purpose::URL_SAFE as BASE64_URL_SAFE};
 
 use arraylib::array::DynArray;
-use arraylib::dtype::DataType;
+use arraylib::dtype::{DataType, DataTypeCategory, PhysicalType};
 use arraylib::arraylike::{NestedList, ArrayValue};
 use arraylib::colors::named_colors;
 
@@ -179,10 +181,60 @@ impl TryInto<Box<[usize]>> for ShapeLike {
     }
 }
 
+struct BytesOrBase64Visitor;
+
+impl<'de> de::Visitor<'de> for BytesOrBase64Visitor {
+    type Value = Box<[u8]>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("ArrayBuffer, TypedArray, or base64-encoded string")
+    }
+
+    fn visit_seq<V: de::SeqAccess<'de>>(self, mut visitor: V) -> Result<Self::Value, V::Error> {
+        let len = std::cmp::min(visitor.size_hint().unwrap_or(0), 4096);
+        let mut bytes = Vec::with_capacity(len);
+
+        while let Some(b) = visitor.next_element()? {
+            bytes.push(b);
+        }
+
+        Ok(bytes.into_boxed_slice())
+    }
+
+    fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        Ok(v.to_owned().into_boxed_slice())
+    }
+
+    fn visit_byte_buf<E: serde::de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+        Ok(Box::from(v))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        BASE64_URL_SAFE.decode(v).map(|v| v.into_boxed_slice()).map_err(|e| E::custom(e.to_string()))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
+        self.visit_str(&v)
+    }
+}
+
+pub fn deserialize_bytes_or_base64<'de, D>(deserializer: D) -> Result<Box<[u8]>, D::Error>
+where D: de::Deserializer<'de>
+{
+    deserializer.deserialize_any(BytesOrBase64Visitor)
+    //deserializer.deserialize_byte_buf(BytesOrBase64Visitor)
+}
+
+pub fn serialize_bytes<S>(val: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+where S: ser::Serializer
+{
+    serializer.serialize_bytes(val)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArrayInterchange {
-    #[serde(rename = "data", with = "serde_bytes")]
-    pub buf: Box<[u8]>,
+    #[serde(rename = "data", with = "serde_wasm_bindgen::preserve")]
+    buf: JsValue,
     #[serde(rename = "typestr", serialize_with = "serialize_typestr", deserialize_with = "deserialize_typestr")]
     pub dtype: DataType,
     pub shape: Box<[usize]>,
@@ -205,6 +257,38 @@ fn serialize_typestr<S: ser::Serializer>(dtype: &DataType, ser: S) -> Result<S::
     ser.serialize_str(to_typestr(dtype))
 }
 
+fn parse_buffer_or_array(value: &JsValue) -> Result<Box<[u8]>, String> {
+    if let Some(buf) = value.as_string() {
+        BASE64_URL_SAFE.decode(buf.as_bytes()).map(|v| v.into_boxed_slice())
+            .map_err(|e| format!("Invalid array data, expected a base64-encoded string: {}", e))
+    } else if let Some(buf) = value.dyn_ref::<js_sys::ArrayBuffer>() {
+        Ok(js_sys::Uint8Array::new(buf).to_vec().into_boxed_slice())
+    } else if let Some(arr) = value.dyn_ref::<js_sys::Array>() {
+        serde_wasm_bindgen::from_value::<Box<[u8]>>(arr.into()).map_err(|e| e.to_string())
+    } else if let Some(buf) = js_sys::Reflect::get(&value, &JsValue::from("buffer")).ok()
+    .and_then(|v| v.dyn_into::<js_sys::ArrayBuffer>().ok()) {
+        Ok(js_sys::Uint8Array::new(&buf).to_vec().into_boxed_slice())
+    } else {
+        Err(format!("Invalid array data: '{:?}', expected an ArrayBuffer, TypedArray, or base64-encoded string", value))
+    }
+}
+
+impl ArrayInterchange {
+    pub fn to_array(self) -> Result<DynArray, String> {
+        DynArray::from_buf(parse_buffer_or_array(&self.buf)?, self.dtype, self.shape, self.strides)
+    }
+}
+
+impl From<DynArray> for ArrayInterchange {
+    fn from(value: DynArray) -> Self {
+        let (buf, dtype, shape, strides) = value.to_buf();
+
+        Self {
+            buf: js_sys::Uint8Array::from(buf.as_ref()).into(), dtype, shape, strides, version: 3,
+        }
+    }
+}
+
 struct TypestrVisitor;
 
 impl<'de> de::Visitor<'de> for TypestrVisitor {
@@ -221,21 +305,6 @@ impl<'de> de::Visitor<'de> for TypestrVisitor {
 
 fn deserialize_typestr<'de, D: de::Deserializer<'de>>(de: D) -> Result<DataType, D::Error> {
     de.deserialize_str(TypestrVisitor)
-}
-
-impl ArrayInterchange {
-    pub fn to_array(self) -> Result<DynArray, String> {
-        DynArray::from_buf(self.buf, self.dtype, self.shape, self.strides)
-    }
-}
-
-impl From<DynArray> for ArrayInterchange {
-    fn from(value: DynArray) -> Self {
-        let (buf, dtype, shape, strides) = value.to_buf();
-        Self {
-            buf, dtype, shape, strides, version: 3,
-        }
-    }
 }
 
 fn parse_typestr(s: &str) -> Result<DataType, String> {
@@ -351,4 +420,26 @@ fn parse_arrayvalue(val: &JsValue) -> Result<ArrayValue, String> {
 
     Err(format!("Array conversion not implemented for type '{}'", val.js_typeof().as_string().unwrap()))
     //Err(format!("Unexpected type '{}'. Expected a number.", val.js_typeof().as_string().unwrap()))
+}
+
+fn to_nested_array_inner<T: PhysicalType, F>(arr: ArrayViewD<'_, T>, f: F) -> JsValue
+where F: Fn(T) -> JsValue + Copy
+{
+    if arr.ndim() == 0 {
+        f(*arr.iter().next().unwrap())
+    } else {
+        let arr: js_sys::Array = arr.outer_iter().map(|inner| to_nested_array_inner(inner, f)).collect();
+        arr.into()
+    }
+}
+
+pub fn to_nested_array(arr: &DynArray) -> Result<JsValue, String> {
+    match arr.dtype().category() {
+        DataTypeCategory::Complex => Err(format!("toNestedArray unsuported for type {}", arr.dtype())),
+        DataTypeCategory::Boolean => Ok(to_nested_array_inner(arr.downcast_ref::<Bool>().unwrap().view(), |val| JsValue::from_bool(val.into()))),
+        _ => {
+            let arr = arr.cast(DataType::Float64);
+            Ok(to_nested_array_inner(arr.downcast_ref::<f64>().unwrap().view(), JsValue::from_f64))
+        }
+    }
 }

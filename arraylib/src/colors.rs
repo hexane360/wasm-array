@@ -72,7 +72,7 @@ macro_rules! impl_colormaps {
     }
 }
 
-impl_colormaps!(cividis, inferno, magma, plasma, viridis);
+impl_colormaps!(cividis, inferno, magma, plasma, viridis, sinebow, hue);
 
 #[inline]
 pub fn normed_float_to_u8<F: Float + ToPrimitive>(val: F) -> u8 {

@@ -111,3 +111,41 @@ test("eye", () => {
  [0, 0, 1]]`
     );
 })
+
+describe("from_interchange", () => {
+    let buf = new ArrayBuffer(10);
+    let arr = new Uint16Array(buf);
+    arr.set([1, 2, 3, 4, 5]);
+
+    const dataFormats = [
+        [1, 0, 2, 0, 3, 0, 4, 0, 5, 0],
+        "AQACAAMABAAFAA==",
+        buf,
+        arr,
+    ];
+
+    for (const data of dataFormats) {
+        test(`data=${data} ${data instanceof ArrayBuffer}`, () => {
+            let arr = np.from_interchange({
+                data: data,
+                strides: null,
+                typestr: '<u2',
+                shape: [5],
+                version: 3
+            });
+
+            expect(arr).arrayEqual(np.array([1, 2, 3, 4, 5], 'uint16'));
+        })
+    }
+})
+
+test("toNestedArray", () => {
+    let arr = np.array([[1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]);
+    expect(arr.toNestedArray()).toEqual([[1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]);
+
+    arr = np.array([true, true, false, true]);
+    expect(arr.toNestedArray()).toEqual([true, true, false, true]);
+
+    arr = np.array(5.6);
+    expect(arr.toNestedArray()).toEqual(5.6);
+})

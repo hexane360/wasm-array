@@ -14,6 +14,7 @@ use ndarray::Array1;
 
 use arraylib::bool::Bool;
 use arraylib::array::{DynArray, self};
+use arraylib::colors::get_cmap;
 use arraylib::dtype::DataType;
 use arraylib::{fft, reductions};
 
@@ -21,7 +22,7 @@ pub mod expr;
 pub mod types;
 
 use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc, BinaryFunc};
-use types::{ArrayInterchange, parse_arraylike};
+use types::{ArrayInterchange, parse_arraylike, to_nested_array};
 
 // # typescript exports
 
@@ -47,7 +48,7 @@ type TypeStr = `${TypeStrEndianness}${TypeStrCharCode}${TypeStrItemSize}`
  * Corresponds with numpy's __array_interface__ protocol.
  */
 interface IArrayInterchange {
-    data: BufferSource;
+    data: BufferSource | string | ReadonlyArray<number>;
     typestr: TypeStr;
     shape: ShapeLike;
     strides: StridesLike;
@@ -209,6 +210,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "FFTNorm")]
     pub type FFTNorm;
+
+    #[wasm_bindgen(typescript_type = "NestedArray<number | boolean>")]
+    pub type NestedArray;
 }
 
 // # struct definitions
@@ -319,7 +323,8 @@ impl JsArray {
     }
 
     /// Apply a colormap to the array, assuming values are normalized between 0 and 1.
-    pub fn apply_cmap(&self, min_color: Option<ColorLike>, max_color: Option<ColorLike>, invalid_color: Option<ColorLike>) -> Result<Clamped<Vec<u8>>, String> {
+    pub fn apply_cmap(&self, cmap: &str, min_color: Option<ColorLike>, max_color: Option<ColorLike>, invalid_color: Option<ColorLike>) -> Result<Clamped<Vec<u8>>, String> {
+        let cmap = get_cmap(cmap)?;
         let min_color: Option<Array1<f32>> = min_color.map(|c| c.try_into()).transpose()?;
         let max_color: Option<Array1<f32>> = max_color.map(|c| c.try_into()).transpose()?;
         let invalid_color: Array1<f32> = invalid_color.map(|c| c.try_into()).transpose()?.unwrap_or(Array1::<f32>::zeros((4,)));
@@ -328,6 +333,7 @@ impl JsArray {
         //let invalid_color = if invalid_color.is_null() { None } else { Some(get_color(invalid_color)?) };
 
         Ok(Clamped(self.inner.apply_cmap(
+            cmap,
             min_color.as_ref().map(|a| a.view()),
             max_color.as_ref().map(|a| a.view()),
             invalid_color.view(),
@@ -358,6 +364,11 @@ impl JsArray {
     /// Return a contiguous, flattened array.
     pub fn flatten(&self) -> Result<JsArray, String> {
         Ok(self.inner.ravel().into())
+    }
+
+    #[wasm_bindgen(js_name = toNestedArray)]
+    pub fn to_nested_array(&self) -> Result<NestedArray, String> {
+        to_nested_array(&self.inner).map(|v| v.into())
     }
 }
 

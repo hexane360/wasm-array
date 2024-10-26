@@ -9,14 +9,14 @@ use itertools::{Itertools, izip};
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
 use ordered_float::NotNan;
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayViewD, Axis};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayView2, ArrayViewD, Axis};
 use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
 use crate::dtype::{DataType, DataTypeCategory, PhysicalType, Bool, IsClose, promote_types};
 use crate::cast::Cast;
 use crate::error::ArrayError;
-use crate::colors::{magma, apply_cmap_u8};
+use crate::colors::apply_cmap_u8;
 use crate::util::normalize_axis;
 
 pub struct DynArray {
@@ -1471,6 +1471,7 @@ impl DynArray {
     }
 
     pub fn apply_cmap(&self,
+        cmap: ArrayView2<'static, f32>,
         min_color: Option<ArrayView1<'_, f32>>,
         max_color: Option<ArrayView1<'_, f32>>,
         invalid_color: ArrayView1<'_, f32>,
@@ -1478,7 +1479,7 @@ impl DynArray {
         let s = self;
         type_dispatch!(
             (f32, f64),
-            |ref s| { apply_cmap_u8(magma(), s.view(), min_color, max_color, invalid_color).into() }
+            |ref s| { apply_cmap_u8(cmap, s.view(), min_color, max_color, invalid_color).into() }
         )
     }
 
