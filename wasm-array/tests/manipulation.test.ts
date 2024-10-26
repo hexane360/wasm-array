@@ -89,3 +89,20 @@ test("broadcast_arrays", () => {
     expect(arr1).arrayEqual([[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]]);
     expect(arr2).arrayEqual([[4, 4, 4, 4], [3, 3, 3, 3], [2, 2, 2, 2], [1, 1, 1, 1]]);
 })
+
+test("split", () => {
+    const arr = np.array([
+        [1, 2, 3, 4],
+        [5, 6, 7, 8]
+    ]);
+
+    let [row1, row2] = np.split(arr);
+    expect(row1).arrayEqual([1, 2, 3, 4]);
+    expect(row2).arrayEqual([5, 6, 7, 8]);
+
+    let [col1, col2, col3, col4] = np.split(arr, -1);
+    expect(col1).arrayEqual([1, 5]);
+    expect(col2).arrayEqual([2, 6]);
+    expect(col3).arrayEqual([3, 7]);
+    expect(col4).arrayEqual([4, 8]);
+})

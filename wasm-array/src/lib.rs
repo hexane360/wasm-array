@@ -587,6 +587,13 @@ pub fn stack(arrs: &JsValue, axis: Option<isize>) -> Result<JsArray, String> {
 }
 
 #[wasm_bindgen]
+/// Split an array along a given axis. Defaults to the first axis
+pub fn split(arr: &ArrayLike, axis: Option<isize>) -> Result<Vec<JsArray>, String> {
+    let arr = parse_arraylike(arr, None)?;
+    arr.split(axis.unwrap_or(0)).map(|arrs| arrs.into_iter().map(|arr| arr.into()).collect())
+}
+
+#[wasm_bindgen]
 /// Broadcast an array to the given shape
 pub fn broadcast_to(array: &ArrayLike, shape: ShapeLike) -> Result<JsArray, String> {
     let arr = parse_arraylike(array, None)?.into_owned();
@@ -594,7 +601,6 @@ pub fn broadcast_to(array: &ArrayLike, shape: ShapeLike) -> Result<JsArray, Stri
 
     arr.broadcast_to(shape).map(|arr| arr.into()).map_err(|err| err.to_string())
 }
-
 
 
 #[wasm_bindgen(variadic, skip_typescript)]

@@ -301,6 +301,16 @@ impl DynArray {
         )
     }
 
+    pub fn split(&self, axis: isize) -> Result<Vec<DynArray>, String> {
+        let axis = Axis(normalize_axis(axis, self.ndim()));
+
+        let s = self;
+        Ok(type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.axis_iter(axis).map(|arr| arr.into_owned().into()).collect() }
+        ))
+    }
+
     pub fn try_mul<A: Borrow<DynArray>>(&self, rhs: A) -> Result<DynArray, String> {
         let rhs = rhs.borrow();
 
