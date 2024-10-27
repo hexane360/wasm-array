@@ -656,6 +656,20 @@ pub fn conj(arr: &ArrayLike) -> Result<JsArray, String> {
 }
 
 #[wasm_bindgen]
+/// Return the complex argument of the input, element-wise
+pub fn angle(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().angle().into())
+}
+
+#[wasm_bindgen]
+/// Return the absolute value of the input squared, element-wise
+pub fn abs2(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().abs2().into())
+}
+
+#[wasm_bindgen]
 /// Return the square root of the input, element-wise
 pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
     let arr = parse_arraylike(arr, None)?;

@@ -1215,6 +1215,26 @@ impl DynArray {
         )
     }
 
+    pub fn angle(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64),
+            |ref s| { s.mapv(|e| e * 0.0).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.arg()).into() },
+        )
+    }
+
+    pub fn abs2(&self) -> DynArray {
+        let s = self;
+        type_dispatch!(
+            (f32, f64),
+            |ref s| { s.mapv(|e| e*e).into() },
+            (Complex<f32>, Complex<f64>),
+            |ref s| { s.mapv(|e| e.norm_sqr()).into() },
+        )
+    }
+
     pub fn equals<T: Borrow<DynArray>>(&self, other: T) -> DynArray {
         let rhs = other.borrow();
 
