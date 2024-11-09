@@ -1,20 +1,28 @@
 [workspace]
 resolver = "2"
-
 members = [
     "arraylib",
     "arraylib_macro",
     "wasm-array",
 ]
 
+[workspace.package]
+version = "0.1.0"
+authors = ["Colin Gilgenbach <colin@gilgenbach.net>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/hexane360/wasm-array"
+
 [workspace.dependencies]
 arraylib_macro = { path = "../arraylib_macro" }
+base64 = "0.22.1"
 bytemuck = { version = "1.16.0", features = ["extern_crate_std", "derive", "min_const_generics", "zeroable_maybe_uninit"] }
+itertools = "^0.13.0"
 ndarray = "0.15.6"
 num = "0.4.3"
 num-complex = { version = "0.4.6", features = ["bytemuck"] }
-zerocopy = { version = "0.7.34", features = ["byteorder", "alloc", "derive"] }
-itertools = "^0.13.0"
+paste = "1.0"
 ordered-float = "4.2.1"
+zerocopy = { version = "0.7.34", features = ["byteorder", "alloc", "derive"] }
 
 rstest = "0.19.0"
