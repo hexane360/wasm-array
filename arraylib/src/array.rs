@@ -9,7 +9,7 @@ use itertools::{Itertools, izip};
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
 use ordered_float::NotNan;
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayView2, ArrayViewD, Axis};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayView2, ArrayViewD, Axis, SliceInfo};
 use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
@@ -1036,6 +1036,21 @@ where T: PhysicalType + Float + Into<U> + std::iter::Product + std::fmt::Debug,
     Ok(result)
 }
 
+fn try_make_slice_info<'a>(slice: &'a [SliceInfoElem], ndim: usize) -> Result<SliceInfo::<Vec<SliceInfoElem>, IxDyn, IxDyn>, String> {
+    let mut slice: Vec<_> = slice.iter().copied().collect();
+    let mut in_ndim = slice.iter().filter(|s| !s.is_new_axis()).count();
+
+    if in_ndim > ndim {
+        return Err(format!("Invalid slice, array has {} dimensions but sliced along {}", ndim, in_ndim));
+    }
+    while in_ndim < ndim {
+        slice.push(SliceInfoElem::Slice { start: 0, end: None, step: 1 });
+        in_ndim += 1;
+    }
+
+    SliceInfo::try_from(slice).map_err(|e| e.to_string())
+}
+
 impl DynArray {
     pub fn cast<'a>(&'a self, dtype: DataType) -> Cow<'a, DynArray> {
         let init_dtype = self.dtype();
@@ -1075,6 +1090,16 @@ impl DynArray {
             return Cow::Borrowed(self);
         }
         self.cast(new_dtype)
+    }
+
+    pub fn slice(&self, slice: &[SliceInfoElem]) -> Result<DynArray, String> {
+        let info = try_make_slice_info(slice, self.ndim())?;
+
+        let s = self;
+        Ok(type_dispatch!(
+            (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| s.slice(info).to_owned().into()
+        ))
     }
 
     pub fn roll(&self, rolls: &[isize], axes: &[isize]) -> DynArray {

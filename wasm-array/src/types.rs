@@ -3,7 +3,7 @@ use std::mem;
 use core::fmt;
 
 use arraylib::bool::Bool;
-use ndarray::{Array1, ArrayViewD};
+use ndarray::{Array1, ArrayViewD, SliceInfoElem};
 use serde::{Serialize, Deserialize, de, ser};
 use wasm_bindgen::prelude::*;
 use base64::engine::{Engine, general_purpose::URL_SAFE as BASE64_URL_SAFE};
@@ -15,7 +15,7 @@ use arraylib::colors::named_colors;
 
 use super::{
     IArrayInterchange, ColorLike, DataTypeLike,
-    ShapeLike, JsDataType, JsArray,
+    ShapeLike, JsDataType, JsSlice, JsArray,
 };
 
 /*
@@ -73,6 +73,18 @@ impl JsDataType {
 
 impl DowncastWasmExport for JsDataType {
     fn __get_type_id() -> &'static str { "HTxHNbDq84KHGdf5" }
+}
+
+#[wasm_bindgen(js_class = Slice)]
+impl JsSlice {
+    #[wasm_bindgen(js_name = "__getTypeId")]
+    pub fn __js_get_type_id(&self) -> String {
+        "ak36NyUpdtlQoS8J".to_owned()
+    }
+}
+
+impl DowncastWasmExport for JsSlice {
+    fn __get_type_id() -> &'static str { "ak36NyUpdtlQoS8J" }
 }
 
 #[wasm_bindgen(js_class = NArray)]
@@ -178,6 +190,18 @@ impl TryInto<Box<[usize]>> for ShapeLike {
 
     fn try_into(self) -> Result<Box<[usize]>, Self::Error> {
         serde_wasm_bindgen::from_value::<Box<[usize]>>(self.obj).map_err(|e| e.to_string())
+    }
+}
+
+pub(crate) fn parse_index(idx: &JsValue) -> Result<SliceInfoElem, String> {
+    if idx.is_null() {
+        Ok(SliceInfoElem::NewAxis)
+    } else if let Some(slice) = JsSlice::downcast_ref(idx) {
+        Ok(slice.into_sliceinfoelem())
+    } else if let Some(n) = idx.as_f64() {
+        Ok(SliceInfoElem::Index(n as isize))
+    } else {
+        Err("Invalid index. Expected a Slice object or a number".to_owned())
     }
 }
 

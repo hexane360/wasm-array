@@ -106,3 +106,19 @@ test("split", () => {
     expect(col3).arrayEqual([3, 7]);
     expect(col4).arrayEqual([4, 8]);
 })
+
+test("index", () => {
+    const arr = np.array([
+        [1, 2, 3, 4],
+        [5, 6, 7, 8]
+    ]);
+
+    expect(arr.slice(0)).arrayEqual([1, 2, 3, 4]);
+
+    expect(arr.slice(new np.Slice(), new np.Slice(null, null, 2))).arrayEqual([
+        [1, 3],
+        [5, 7]
+    ]);
+
+    expect (arr.slice(new np.Slice(-1), new np.Slice(null, 3))).arrayEqual([[5, 6, 7]]);
+})

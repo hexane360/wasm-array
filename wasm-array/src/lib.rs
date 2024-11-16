@@ -10,7 +10,7 @@ use num::Complex;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
-use ndarray::Array1;
+use ndarray::{Array1, SliceInfoElem};
 
 use arraylib::bool::Bool;
 use arraylib::array::{DynArray, self};
@@ -22,7 +22,7 @@ pub mod expr;
 pub mod types;
 
 use expr::{parse_with_literals, ArrayFunc, FuncMap, Token, UnaryFunc, BinaryFunc};
-use types::{ArrayInterchange, parse_arraylike, to_nested_array};
+use types::{ArrayInterchange, parse_index, parse_arraylike, to_nested_array};
 
 // # typescript exports
 
@@ -79,7 +79,15 @@ type ShapeLike = ReadonlyArray<number> | Uint8Array | Uint16Array | Uint32Array 
 type StridesLike = ShapeLike | Int8Array | Int16Array | Int32Array | BigInt64Array;
 type AxesLike = StridesLike;
 
+type IndexLike = number | Slice | null;
+
 type FFTNorm = "backward" | "ortho" | "forward";
+
+declare module "." {
+    interface NArray {
+        slice(...idxs: ReadonlyArray<IndexLike>): NArray;
+    }
+}
 
 /**
  * Evaluate an arithemetic array expression. Designed to be used as a template literal.
@@ -185,8 +193,6 @@ export function broadcast_shapes(...shapes: ReadonlyArray<ShapeLike>): Array<num
 
 #[wasm_bindgen]
 extern "C" {
-    //#[wasm_bindgen(js_namespace = console)]
-    //fn log(s: &str);
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 
@@ -207,6 +213,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "AxesLike")]
     pub type AxesLike;
+
+    #[wasm_bindgen(typescript_type = "IndexLike")]
+    pub type IndexLike;
 
     #[wasm_bindgen(typescript_type = "FFTNorm")]
     pub type FFTNorm;
@@ -240,6 +249,46 @@ impl JsDataType {
     }
 }
 
+#[wasm_bindgen(js_name = Slice)]
+#[derive(Clone, Copy)]
+pub struct JsSlice {
+    start: isize,
+    end: Option<isize>,
+    step: isize,
+}
+
+#[wasm_bindgen(js_class = Slice)]
+impl JsSlice {
+    #[wasm_bindgen(constructor)]
+    pub fn new(start: Option<isize>, end: Option<isize>, step: Option<isize>) -> Self {
+        let step = step.unwrap_or(1);
+        return Self {
+            start: start.unwrap_or(if step >= 0 { 0 } else { -1 }),
+            end, step,
+        }
+    }
+
+    #[wasm_bindgen(js_name = toString)]
+    pub fn to_string(&self) -> String {
+        format!(
+            "{}..{}{}",
+            if self.start == 0 { "".to_owned() } else { self.start.to_string() },
+            if let Some(end) = self.end { end.to_string() } else { "".to_owned() },
+            if self.step == 1 { "".to_owned() } else { format!("..{}", self.step) }
+        )
+    }
+}
+
+impl JsSlice {
+    pub fn into_sliceinfoelem(&self) -> SliceInfoElem {
+        SliceInfoElem::Slice {
+            start: self.start,
+            end: self.end,
+            step: self.step,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = NArray)]
 pub struct JsArray {
     inner: DynArray
@@ -248,7 +297,6 @@ pub struct JsArray {
 impl From<DynArray> for JsArray {
     fn from(value: DynArray) -> Self { JsArray { inner: value } }
 }
-
 
 #[wasm_bindgen(js_class = NArray)]
 impl JsArray {
@@ -369,6 +417,14 @@ impl JsArray {
     #[wasm_bindgen(js_name = toNestedArray)]
     pub fn to_nested_array(&self) -> Result<NestedArray, String> {
         to_nested_array(&self.inner).map(|v| v.into())
+    }
+
+    #[wasm_bindgen(variadic, skip_typescript)]
+    pub fn slice(&self, idxs: &JsValue) -> Result<JsArray, String> {
+        let idxs: Vec<SliceInfoElem> = idxs.dyn_ref::<js_sys::Array>().ok_or_else(|| "'idxs' must be an array of indices or slices".to_owned())?
+            .iter().map(|v| parse_index(&v)).try_collect()?;
+
+        self.inner.slice(&idxs).map(|v| v.into())
     }
 }
 
@@ -1107,8 +1163,11 @@ static ARRAY_FUNCS: OnceLock<FuncMap> = OnceLock::new();
 fn init_array_funcs() -> FuncMap {
     let funcs: Vec<Box<dyn ArrayFunc + Sync + Send>> = vec![
         Box::new(UnaryFunc::new("abs", DynArray::abs)),
+        Box::new(UnaryFunc::new("abs2", DynArray::abs2)),
         Box::new(UnaryFunc::new("exp", DynArray::exp)),
         Box::new(UnaryFunc::new("sqrt", DynArray::sqrt)),
+        Box::new(UnaryFunc::new("ceil", DynArray::ceil)),
+        Box::new(UnaryFunc::new("floor", DynArray::floor)),
         Box::new(BinaryFunc::new("minimum", |l, r| l.minimum(r))),
         Box::new(BinaryFunc::new("maximum", |l, r| l.maximum(r))),
         Box::new(BinaryFunc::new("nanminimum", |l, r| l.nanminimum(r))),
@@ -1121,6 +1180,8 @@ fn init_array_funcs() -> FuncMap {
         Box::new(UnaryFunc::new("arccos", DynArray::arccos)),
         Box::new(UnaryFunc::new("arctan", DynArray::arctan)),
         Box::new(BinaryFunc::new("arctan2", |y, x| y.arctan2(x))),
+        Box::new(UnaryFunc::new("conj", DynArray::conj)),
+        Box::new(UnaryFunc::new("angle", DynArray::angle)),
     ];
 
     funcs.into_iter().map(|f| (f.name(), f)).collect()
