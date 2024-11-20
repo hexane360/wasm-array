@@ -36,6 +36,24 @@ test("exp", () => {
     expect(np.expr`exp(${arr})`).arrayAlmostEqual(expected, 1e-8, 1e-7);
 })
 
+test("log", () => {
+    expect(np.log_(np.array([1, 2, 3, 4, 5], 'float32'))).arrayAlmostEqual(
+        np.array([0.        , 0.69314718, 1.09861229, 1.38629436, 1.60943791], 'float32')
+    );
+
+    expect(np.log2_([1, 2, 3, 4, 5])).arrayAlmostEqual(
+        np.array([0.        , 1.        , 1.5849625 , 2.        , 2.32192809], 'float64')
+    );
+
+    expect(np.log10_(np.array([2, 4, 6, 8, 10], 'complex64'))).arrayAlmostEqual(
+        np.array([0.30102998, 0.60205999, 0.77815125, 0.90308999, 1.        ], 'complex64')
+    );
+
+    let arr = np.array([1, 2, 3, 4, 5], 'float32')
+    let expected = np.array([0.        , 0.69314718, 1.09861229, 1.38629436, 1.60943791], 'float32')
+    expect(np.expr`log(${arr})`).arrayAlmostEqual(expected);
+})
+
 test("trig", () => {
     let arr = np.array([0., np.expr`pi/2`, np.expr`2*pi`, 1.], 'float64');
 

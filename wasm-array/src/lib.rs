@@ -193,8 +193,8 @@ export function broadcast_shapes(...shapes: ReadonlyArray<ShapeLike>): Array<num
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    #[wasm_bindgen(js_namespace = console, js_name="log")]
+    fn _log(s: &str);
 
     #[wasm_bindgen(typescript_type = "IArrayInterchange")]
     pub type IArrayInterchange;
@@ -295,7 +295,14 @@ pub struct JsArray {
 }
 
 impl From<DynArray> for JsArray {
-    fn from(value: DynArray) -> Self { JsArray { inner: value } }
+    fn from(value: DynArray) -> Self {
+        //_log(&format!("JsArray::new(dtype: {} shape: {:?})", value.dtype(), value.shape()));
+        JsArray { inner: value }
+    }
+}
+
+impl Into<DynArray> for JsArray {
+    fn into(self) -> DynArray { self.inner }
 }
 
 #[wasm_bindgen(js_class = NArray)]
@@ -342,7 +349,7 @@ impl JsArray {
     #[wasm_bindgen(js_name = toInterchange)]
     /// Convert the array to a JSON interchange format, loosely conforming with numpy's __array_interface__ protocol.
     pub fn to_interchange(self) -> Result<JsValue, JsValue> {
-        Ok(ArrayInterchange::from(self.inner).serialize(
+        Ok(ArrayInterchange::from(Into::<DynArray>::into(self)).serialize(
             &serde_wasm_bindgen::Serializer::new()
                 .serialize_missing_as_null(true)
                 .serialize_maps_as_objects(true)
@@ -352,7 +359,7 @@ impl JsArray {
     #[wasm_bindgen(js_name = toString)]
     /// Convert the array to a string representation. Useful for debugging.
     pub fn to_string(&self) -> String {
-        let mut s = format!("Array {}\n{}", self.inner.dtype(), self.inner);
+        let mut s = format!("Array {}\n{}", self.inner.dtype(), &self.inner);
         if s.lines().count() < 3 {
             let i = s.find('\n').unwrap();
             // SAFETY: we replace an entire UTF-8 codepoint '\n' with ' '
@@ -726,17 +733,38 @@ pub fn abs2(arr: &ArrayLike) -> Result<JsArray, String> {
 }
 
 #[wasm_bindgen]
-/// Return the square root of the input, element-wise
-pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
-    let arr = parse_arraylike(arr, None)?;
-    Ok(arr.as_ref().sqrt().into())
-}
-
-#[wasm_bindgen]
 /// Return the exponential e^x of the input, element-wise
 pub fn exp_(arr: &ArrayLike) -> Result<JsArray, String> {
     let arr = parse_arraylike(arr, None)?;
     Ok(arr.as_ref().exp().into())
+}
+
+#[wasm_bindgen]
+/// Return the natural (base-e) logarithm of the input, element-wise
+pub fn log_(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().log().into())
+}
+
+#[wasm_bindgen]
+/// Return the base-2 logarithm of the input, element-wise
+pub fn log2_(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().log2().into())
+}
+
+#[wasm_bindgen]
+/// Return the base-10 logarithm of the input, element-wise
+pub fn log10_(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().log10().into())
+}
+
+#[wasm_bindgen]
+/// Return the square root of the input, element-wise
+pub fn sqrt(arr: &ArrayLike) -> Result<JsArray, String> {
+    let arr = parse_arraylike(arr, None)?;
+    Ok(arr.as_ref().sqrt().into())
 }
 
 #[wasm_bindgen]
@@ -1165,6 +1193,9 @@ fn init_array_funcs() -> FuncMap {
         Box::new(UnaryFunc::new("abs", DynArray::abs)),
         Box::new(UnaryFunc::new("abs2", DynArray::abs2)),
         Box::new(UnaryFunc::new("exp", DynArray::exp)),
+        Box::new(UnaryFunc::new("log", DynArray::log)),
+        Box::new(UnaryFunc::new("log2", DynArray::log2)),
+        Box::new(UnaryFunc::new("log10", DynArray::log10)),
         Box::new(UnaryFunc::new("sqrt", DynArray::sqrt)),
         Box::new(UnaryFunc::new("ceil", DynArray::ceil)),
         Box::new(UnaryFunc::new("floor", DynArray::floor)),
@@ -1207,7 +1238,7 @@ pub fn expr(strs: Vec<String>, lits: &JsValue) -> Result<JsArray, String> {
 
 pub fn set_panic_hook() {
     console_error_panic_hook::set_once();
-    //log::subscribe(Box::new(log));
+    //log::subscribe(Box::new(_log));
 }
 
 #[wasm_bindgen(start)]

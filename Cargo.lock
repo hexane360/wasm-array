@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "arraylib"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "arraylib_macro",
  "bytemuck",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "arraylib_macro"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -653,7 +653,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wasm-array"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "arraylib",
  "base64",

@@ -1120,6 +1120,8 @@ impl DynArray {
         )
     }
 
+    // elementwise functions
+
     pub fn abs(&self) -> DynArray {
         let s = self;
 
@@ -1139,6 +1141,30 @@ impl DynArray {
         type_dispatch!(
             (f32, f64, Complex<f32>, Complex<f64>),
             |ref s| { s.map(|e| e.exp()).into() },
+        )
+    }
+
+    pub fn log(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.map(|e| e.ln()).into() },
+        )
+    }
+
+    pub fn log2(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.map(|e| e.log2()).into() },
+        )
+    }
+
+    pub fn log10(&self) -> DynArray {
+        let s = self.cast_min_category(DataTypeCategory::Floating);
+        type_dispatch!(
+            (f32, f64, Complex<f32>, Complex<f64>),
+            |ref s| { s.map(|e| e.log10()).into() },
         )
     }
 
