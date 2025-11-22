@@ -18,7 +18,7 @@ arraylib_macro = { path = "../arraylib_macro" }
 base64 = "0.22.1"
 bytemuck = { version = "1.16.0", features = ["extern_crate_std", "derive", "min_const_generics", "zeroable_maybe_uninit"] }
 itertools = "^0.13.0"
-ndarray = "0.15.6"
+ndarray = "0.17.1"
 num = "0.4.3"
 num-complex = { version = "0.4.6", features = ["bytemuck"] }
 paste = "1.0"

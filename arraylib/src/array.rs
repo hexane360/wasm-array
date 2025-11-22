@@ -9,7 +9,7 @@ use itertools::{Itertools, izip};
 use num::{Float, Zero, One, Integer};
 use num_complex::{Complex, ComplexFloat};
 use ordered_float::NotNan;
-use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayView2, ArrayViewD, Axis, SliceInfo};
+use ndarray::{Array, Array1, Array2, ArrayD, ArrayView1, ArrayView2, ArrayViewD, Axis, Order, SliceInfo};
 use ndarray::{Dimension, ErrorKind, IxDyn, ShapeBuilder, ShapeError, SliceInfoElem, Zip};
 
 use arraylib_macro::{type_dispatch, forward_val_to_ref};
@@ -129,7 +129,7 @@ impl DynArray {
         let shape = match strides {
             Some(strides) => shape.strides(bytemuck::cast_slice(&strides)),
             // default to c order
-            None => shape.into_shape().into(),
+            None => shape.into_shape_with_order().into(),
         };
 
         Ok(match dtype {
@@ -170,7 +170,7 @@ impl DynArray {
         let buf: Box<[u8]> = type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |s| {
-                align_and_cast_buf(s.into_raw_vec().into_boxed_slice()).into_boxed_slice()
+                align_and_cast_buf(s.into_raw_vec_and_offset().0.into_boxed_slice()).into_boxed_slice()
             }
         );
 
@@ -254,7 +254,7 @@ impl DynArray {
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
             |ref s| {
-                Ok(s.broadcast(shape.into_shape().raw_dim().clone()).ok_or_else(|| ShapeError::from_kind(ErrorKind::IncompatibleShape))?.to_owned().into())
+                Ok(s.broadcast(shape.into_shape_with_order().raw_dim().clone()).ok_or_else(|| ShapeError::from_kind(ErrorKind::IncompatibleShape))?.to_owned().into())
             }
         )
     }
@@ -288,16 +288,15 @@ impl DynArray {
         let s = self;
         Ok(type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.view().into_shape(shape).unwrap().into_owned().into() }
+            |ref s| { s.view().to_shape(shape).unwrap().into_owned().into() }
         ))
     }
 
     pub fn ravel(&self) -> DynArray {
-        let size = self.size();
         let s = self;
         type_dispatch!(
             (Bool, u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, Complex<f32>, Complex<f64>),
-            |ref s| { s.view().into_shape(vec![size]).unwrap().as_standard_layout().to_owned().into() }
+            |ref s| { s.view().flatten_with_order(Order::C).to_owned().into() }
         )
     }
 
@@ -668,23 +667,10 @@ fn mat_mul_inner<T: PhysicalType + ndarray::LinalgScalar>(lhs: &ArrayD<T>, rhs: 
     let shared_size: usize = rhs_view.shape()[0];
     let out_shape: Vec<usize> = lhs.shape()[..lhs.ndim() - 1].iter().chain(rhs_view.shape()[1..].iter()).copied().collect();
 
-    let lhs_array;
-    let lhs_view = if lhs.is_standard_layout() {
-        lhs.view().into_shape((lhs_size, shared_size)).unwrap()
-    } else {
-        lhs_array = Array::from_shape_vec((lhs_size, shared_size), lhs.iter().cloned().collect()).unwrap();
-        lhs_array.view()
-    };
+    let lhs_view = lhs.to_shape(((lhs_size, shared_size), Order::C)).unwrap();
+    let rhs_view = rhs.to_shape(((shared_size, rhs_size), Order::C)).unwrap();
 
-    let rhs_array;
-    let rhs_view = if rhs_view.is_standard_layout() {
-        rhs_view.into_shape((shared_size, rhs_size)).unwrap()
-    } else {
-        rhs_array = Array::from_shape_vec((shared_size, rhs_size), rhs.iter().cloned().collect()).unwrap();
-        rhs_array.view()
-    };
-
-    lhs_view.dot(&rhs_view).into_shape(out_shape).unwrap()
+    lhs_view.dot(&rhs_view).into_shape_with_order(out_shape).unwrap()
 }
 
 #[inline]
@@ -1362,12 +1348,12 @@ impl DynArray {
 
     pub fn allequal<T: Borrow<DynArray>>(&self, other: T) -> bool {
         let arr = self.equals(other).downcast::<Bool>().expect("'equals' returned wrong type");
-        arr.into_raw_vec().into_iter().all(|b| b.into())
+        arr.into_raw_vec_and_offset().0.into_iter().all(|b| b.into())
     }
 
     pub fn allclose<T: Borrow<DynArray>>(&self, other: T, rtol: f64, atol: f64) -> bool {
         let arr = self.isclose(other, rtol, atol).downcast::<Bool>().unwrap();
-        arr.into_raw_vec().into_iter().all(|b| b.into())
+        arr.into_raw_vec_and_offset().0.into_iter().all(|b| b.into())
     }
 
     pub fn less<T: Borrow<DynArray>>(&self, other: T) -> DynArray {

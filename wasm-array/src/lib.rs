@@ -392,7 +392,7 @@ impl JsArray {
             min_color.as_ref().map(|a| a.view()),
             max_color.as_ref().map(|a| a.view()),
             invalid_color.view(),
-        ).downcast::<u8>().unwrap().into_raw_vec()))
+        ).downcast::<u8>().unwrap().flatten().into_owned().into_raw_vec_and_offset().0))
     }
 
     /// Return the array converted to datatype `dtype`. Throws an error if the conversion is not possible.

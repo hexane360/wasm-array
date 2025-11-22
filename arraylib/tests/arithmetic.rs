@@ -42,8 +42,8 @@ fn test_matmul() {
     assert_eq!(vec![1, 2, 2, 3], out.shape());
     assert_eq!(out.dtype(), DataType::Float32);
     assert_eq!(
-        out.downcast::<f32>().unwrap().into_raw_vec(),
-        &[40.0f32, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0]
+        out.downcast::<f32>().unwrap().into_raw_vec_and_offset().0,
+        &[40.0f32, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0, 40.0, 80.0, 120.0],
     )
 }
 
