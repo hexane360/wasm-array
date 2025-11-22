@@ -17,8 +17,8 @@ num-complex.workspace = true
 paste.workspace = true
 ordered-float.workspace = true
 zerocopy.workspace = true
-include_bytes_aligned = "0.1.3"
-rustfft = { version = "6.2.0", features = ["wasm_simd"] }
+include_bytes_aligned = "0.1.4"
+rustfft = { version = "6.4.1", features = ["wasm_simd"] }
 
 [dev-dependencies]
 rstest.workspace = true
